@@ -17,13 +17,13 @@ jobs:
         username: ${{ secrets.DOCKER_USERNAME }}
         password: ${{ secrets.DOCKER_PASSWORD }}
         dockerfile: .devcontainer/Dockerfile
-        repository: paritytech/substrate-playground-template-node-template
+        repository: darkdex/darkdex-chain
         tags: latest
         add_git_labels: true
         tag_with_ref: true
         tag_with_sha: true
 
-    - run: echo ::set-output name=image::paritytech/substrate-playground-template-node-template:sha-${GITHUB_SHA::7}
+    - run: echo ::set-output name=image::darkdex/darkdex-chain:sha-${GITHUB_SHA::7}
       id: env
 
     - name: Update devcontainer.json
@@ -38,11 +38,3 @@ jobs:
         add: ".devcontainer/devcontainer.json"
       env:
         GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-
-    - name: Trigger playground inclusion
-      uses: peter-evans/repository-dispatch@v1
-      with:
-        token: ${{ secrets.REPO_ACCESS_TOKEN }}
-        repository: paritytech/substrate-playground
-        event-type: template-updated
-        client-payload: '{"id": "node-template", "image": "${{ steps.env.outputs.image }}"}'
