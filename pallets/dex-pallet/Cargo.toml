@@ -50,6 +50,10 @@ default-features = false
 tag = 'v2.0.0-rc4'
 version = '2.0.0-rc4'
 
+[dependencies.serde]
+features = ['derive']
+optional = true
+version = '1.0.101'
 
 [features]
 default = ['std']

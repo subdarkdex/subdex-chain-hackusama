@@ -1,10 +1,10 @@
 #![cfg_attr(not(feature = "std"), no_std)]
 
-use codec::{Codec, Decode, Encode};
+use codec::{Decode, Encode};
 use frame_support::{decl_error, decl_event, decl_module, decl_storage, dispatch};
 use frame_system::{self as system, ensure_signed};
 use sp_std::vec::Vec;
-use std::collections::HashMap;
+use sp_std::{collections::btree_map::BTreeMap, prelude::*};
 
 #[cfg(test)]
 mod mock;
@@ -18,25 +18,37 @@ pub use serde::{Deserialize, Serialize};
 type TokenId = u128;
 type TShares = u128;
 type TAmount = u128;
+
 #[cfg_attr(feature = "std", derive(Serialize, Deserialize))]
-#[derive(Encode, Decode, Default, Clone, PartialEq, Eq, Debug)]
-pub struct TokensPair {
-    feeRate: float,
-    ksmPool: TAmount,
-    tokenPool: TAmount,
+#[derive(Encode, Decode, Clone, PartialEq, Eq, Debug)]
+pub struct TokensPair<T: Trait> {
+    fee_rate: u128,
+    ksm_pool: TAmount,
+    token_pool: TAmount,
     invariant: TAmount,
-    totalShares: TShares,
-    shares: HashMap<system::Trait::AccountId, TShares>,
+    total_shares: TShares,
+    shares: BTreeMap<T::AccountId, TShares>,
 }
 
 pub trait Trait: system::Trait {
     type Event: From<Event<Self>> + Into<<Self as system::Trait>::Event>;
 }
-
+impl<T: Trait> Default for TokensPair<T> {
+    fn default() -> Self {
+        Self {
+            fee_rate: 0u128,
+            ksm_pool: 0u128,
+            token_pool: 0u128,
+            invariant: 0u128,
+            total_shares: 0u128,
+            shares: BTreeMap::new(),
+        }
+    }
+}
 decl_storage! {
     trait Store for Module<T: Trait> as TemplateModule {
         pub SupportedTokens: Vec<TokenId>;
-        pub PairStructs get(fn pair_structs): map hasher(blake2_128_concat) TokenId => TokensPair;
+        pub PairStructs get(fn pair_structs): map hasher(blake2_128_concat) TokenId => TokensPair<T>;
     }
 }
 
@@ -77,33 +89,9 @@ decl_module! {
         /// takes a parameter of the type `AccountId`, stores it, and emits an event
         #[weight = 10_000]
         pub fn do_something(origin, something: u32) -> dispatch::DispatchResult {
-            // Check it was signed and get the signer. See also: ensure_root and ensure_none
             let who = ensure_signed(origin)?;
 
-            // Code to execute when something calls this.
-            // For example: the following line stores the passed in u32 in the storage
-            Something::put(something);
-
-            // Here we are raising the Something event
-            Self::deposit_event(RawEvent::SomethingStored(something, who));
             Ok(())
-        }
-
-        /// Another dummy entry point.
-        /// takes no parameters, attempts to increment storage value, and possibly throws an error
-        #[weight = 10_000]
-        pub fn cause_error(origin) -> dispatch::DispatchResult {
-            // Check it was signed and get the signer. See also: ensure_root and ensure_none
-            let _who = ensure_signed(origin)?;
-
-            match Something::get() {
-                None => Err(Error::<T>::NoneValue)?,
-                Some(old) => {
-                    let new = old.checked_add(1).ok_or(Error::<T>::StorageOverflow)?;
-                    Something::put(new);
-                    Ok(())
-                },
-            }
         }
     }
 }
