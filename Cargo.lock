@@ -2817,6 +2817,7 @@ dependencies = [
 name = "node-template-runtime"
 version = "2.0.0-rc4"
 dependencies = [
+ "dex-pallet",
  "frame-executive",
  "frame-support",
  "frame-system",
