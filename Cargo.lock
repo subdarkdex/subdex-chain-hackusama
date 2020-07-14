@@ -782,6 +782,18 @@ dependencies = [
 ]
 
 [[package]]
+name = "dex-pallet"
+version = "2.0.0-rc4"
+dependencies = [
+ "frame-support",
+ "frame-system",
+ "parity-scale-codec",
+ "sp-core",
+ "sp-io",
+ "sp-runtime",
+]
+
+[[package]]
 name = "digest"
 version = "0.8.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
