@@ -80,15 +80,45 @@ decl_module! {
     pub struct Module<T: Trait> for enum Call where origin: T::Origin {
         type Error = Error<T>;
 
-        // Initializing events
-        // this is needed only if you are using events in your pallet
         fn deposit_event() = default;
 
-        /// Just a dummy entry point.
-        /// function that can be called by the external world as an extrinsics call
-        /// takes a parameter of the type `AccountId`, stores it, and emits an event
         #[weight = 10_000]
-        pub fn do_something(origin, something: u32) -> dispatch::DispatchResult {
+        pub fn initialize_exchange(origin, token: TokenId, ksm_amount : TAmount,  token_amount: TAmount) -> dispatch::DispatchResult {
+            let who = ensure_signed(origin)?;
+
+            Ok(())
+        }
+
+        #[weight = 10_000]
+        pub fn ksm_to_token_swap(origin, token: TokenId, ksm_amount : TAmount,  min_tokens_received: TAmount) -> dispatch::DispatchResult {
+            let who = ensure_signed(origin)?;
+
+            Ok(())
+        }
+
+        #[weight = 10_000]
+        pub fn token_to_ksm_swap(origin, token: TokenId,   token_amount: TAmount,min_ksm_received : TAmount) -> dispatch::DispatchResult {
+            let who = ensure_signed(origin)?;
+
+            Ok(())
+        }
+
+        #[weight = 10_000]
+        pub fn token_to_token_swap(origin, token_from: TokenId, token_to: TokenId, token_amount: TAmount, min_token_received : TAmount) -> dispatch::DispatchResult {
+            let who = ensure_signed(origin)?;
+
+            Ok(())
+        }
+
+        #[weight = 10_000]
+        pub fn invest_liquidity(origin, token: TokenId, min_shares: TShares) -> dispatch::DispatchResult {
+            let who = ensure_signed(origin)?;
+
+            Ok(())
+        }
+
+        #[weight = 10_000]
+        pub fn divest_liquidity(origin, token: TokenId,shares_burned: TShares, min_ksm_received : TAmount, min_token_received : TAmount) -> dispatch::DispatchResult {
             let who = ensure_signed(origin)?;
 
             Ok(())
