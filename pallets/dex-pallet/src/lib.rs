@@ -48,7 +48,6 @@ impl<T: Trait> Default for TokensPair<T> {
 }
 decl_storage! {
     trait Store for Module<T: Trait> as TemplateModule {
-        pub SupportedTokens get(fn supported_tokens): Vec<TokenId>;
         pub PairStructs get(fn pair_structs): map hasher(blake2_128_concat) TokenId => TokensPair<T>;
     }
 }
