@@ -77,7 +77,7 @@ decl_error! {
         LowTokenAmount,
         LowAmountOut,
         InsufficientPool,
-        ForbiddenPair
+        ForbiddenPair,
     }
 }
 
@@ -104,13 +104,12 @@ decl_module! {
             pair.invariant = token_amount * ksm_amount;
             let total_shares = 1000u128;
             pair.shares.insert(sender.clone(), total_shares);
-            pair.invariant = total_shares;
+            pair.total_shares = total_shares;
             PairStructs::<T>::insert(token, pair);
 
             // transfer `ksm_amount` to our address
             // transfer `token_amount` to our address
 
-            // event
             Self::deposit_event(RawEvent::Invested(sender, total_shares));
             Ok(())
         }
@@ -202,9 +201,31 @@ decl_module! {
         }
 
         #[weight = 10_000]
-        pub fn invest_liquidity(origin, token: TokenId, min_shares: TShares) -> dispatch::DispatchResult {
+        pub fn invest_liquidity(origin, token: TokenId, shares: TShares) -> dispatch::DispatchResult {
             let sender = ensure_signed(origin)?;
+            ensure!(PairStructs::<T>::contains_key(token), Error::<T>::PairNotExist);
+            let mut pair = PairStructs::<T>::get(token);
 
+            let ksm_per_share = pair.ksm_pool / pair.total_shares;
+            let ksm_cost = ksm_per_share * shares;
+            let tokens_per_share = pair.token_pool / pair.total_shares;
+            let tokens_cost = tokens_per_share * shares;
+            let prev_shares = match pair.shares.get(&sender) {
+                Some(prev_shares) => prev_shares.clone(),
+                None => 0 as TShares,
+            };
+            pair.shares.insert(sender.clone(), shares + prev_shares);
+
+            pair.total_shares += shares;
+            pair.ksm_pool += ksm_cost;
+            pair.token_pool += tokens_cost;
+            pair.invariant = pair.ksm_pool * pair.token_pool;
+            PairStructs::<T>::insert(token, pair);
+
+            // transfer `ksm_cost` to our address
+            // transfer `tokens_cost` to our address
+
+            Self::deposit_event(RawEvent::Invested(sender, shares));
             Ok(())
         }
 
