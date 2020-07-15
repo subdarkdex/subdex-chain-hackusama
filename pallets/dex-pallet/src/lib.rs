@@ -78,6 +78,7 @@ decl_error! {
         LowAmountOut,
         InsufficientPool,
         ForbiddenPair,
+        LowShares,
     }
 }
 
@@ -230,9 +231,39 @@ decl_module! {
         }
 
         #[weight = 10_000]
-        pub fn divest_liquidity(origin, token: TokenId,shares_burned: TShares, min_ksm_received : TAmount, min_token_received : TAmount) -> dispatch::DispatchResult {
+        pub fn divest_liquidity(origin, token: TokenId, shares_burned: TShares, min_ksm_received : TAmount, min_token_received : TAmount) -> dispatch::DispatchResult {
             let sender = ensure_signed(origin)?;
+            ensure!(shares_burned > 0, Error::<T>::LowShares);
+            ensure!(PairStructs::<T>::contains_key(token), Error::<T>::PairNotExist);
+            let mut pair = PairStructs::<T>::get(token);
 
+            let prev_shares = match pair.shares.get(&sender) {
+                Some(prev_shares) => prev_shares.clone(),
+                None => 0 as TShares,
+            };
+            pair.shares.insert(sender.clone(), prev_shares - shares_burned);
+
+            let ksm_per_share = pair.ksm_pool / pair.total_shares;
+            let ksm_cost = ksm_per_share * shares_burned;
+            let tokens_per_share = pair.token_pool / pair.total_shares;
+            let tokens_cost = tokens_per_share * shares_burned;
+
+            ensure!(ksm_cost >= min_ksm_received, Error::<T>::LowAmountOut);
+            ensure!(tokens_cost >= min_token_received, Error::<T>::LowAmountOut);
+
+            pair.total_shares -= shares_burned;
+            pair.ksm_pool -= ksm_cost;
+            pair.token_pool -= tokens_cost;
+            if pair.total_shares == 0 {
+                pair.invariant = 0;
+            } else {
+                pair.invariant = pair.ksm_pool * pair.token_pool;
+            }
+
+            // transfer `ksm_cost` to sender
+            // transfer `tokens_cost` to sender
+
+            Self::deposit_event(RawEvent::Divested(sender, shares_burned));
             Ok(())
         }
     }
