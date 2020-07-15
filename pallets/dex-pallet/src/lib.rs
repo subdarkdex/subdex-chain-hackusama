@@ -76,7 +76,8 @@ decl_error! {
         LowKsmAmount,
         LowTokenAmount,
         LowAmountOut,
-        InsufficientPool
+        InsufficientPool,
+        ForbiddenPair
     }
 }
 
@@ -164,22 +165,52 @@ decl_module! {
         }
 
         #[weight = 10_000]
-        pub fn token_to_token_swap(origin, token_from: TokenId, token_to: TokenId, token_amount: TAmount, min_token_received : TAmount, receiver : T::AccountId) -> dispatch::DispatchResult {
-            let who = ensure_signed(origin)?;
+        pub fn token_to_token_swap(origin, token_from: TokenId, token_to: TokenId, token_amount: TAmount, min_tokens_received : TAmount, receiver : T::AccountId) -> dispatch::DispatchResult {
+            let sender = ensure_signed(origin)?;
+            ensure!(PairStructs::<T>::contains_key(token_from), Error::<T>::PairNotExist);
+            ensure!(PairStructs::<T>::contains_key(token_to), Error::<T>::PairNotExist);
+            ensure!(token_from != token_to, Error::<T>::ForbiddenPair);
+            let mut pair_from = PairStructs::<T>::get(token_from);
+            let mut pair_to = PairStructs::<T>::get(token_to);
 
+            let fee = token_amount / pair_from.fee_rate;
+            pair_from.token_pool += token_amount;
+            let temp_token_pool = pair_from.token_pool - fee;
+            let new_ksm_pool = pair_from.invariant / temp_token_pool;
+            let ksm_out = pair_from.ksm_pool - new_ksm_pool;
+
+            ensure!(ksm_out <= pair_from.ksm_pool, Error::<T>::InsufficientPool);
+            pair_from.ksm_pool = new_ksm_pool;
+            pair_from.invariant = pair_from.token_pool * pair_from.ksm_pool;
+
+            let fee = ksm_out / pair_to.fee_rate;
+            pair_to.ksm_pool += ksm_out;
+            let temp_ksm_pool = pair_to.ksm_pool - fee;
+            let new_token_pool = pair_to.invariant / temp_ksm_pool;
+            let tokens_out = pair_to.token_pool - new_token_pool;
+
+            ensure!(tokens_out >= min_tokens_received, Error::<T>::LowAmountOut);
+            ensure!(tokens_out <= pair_to.token_pool, Error::<T>::InsufficientPool);
+            pair_to.token_pool = new_token_pool;
+            pair_to.invariant = pair_to.token_pool * pair_to.ksm_pool;
+
+            // transfer `token_amount` to our address
+            // transfer `tokens_out` to receiver
+
+            Self::deposit_event(RawEvent::Exchanged(token_from, token_to, token_amount, sender));
             Ok(())
         }
 
         #[weight = 10_000]
         pub fn invest_liquidity(origin, token: TokenId, min_shares: TShares) -> dispatch::DispatchResult {
-            let who = ensure_signed(origin)?;
+            let sender = ensure_signed(origin)?;
 
             Ok(())
         }
 
         #[weight = 10_000]
         pub fn divest_liquidity(origin, token: TokenId,shares_burned: TShares, min_ksm_received : TAmount, min_token_received : TAmount) -> dispatch::DispatchResult {
-            let who = ensure_signed(origin)?;
+            let sender = ensure_signed(origin)?;
 
             Ok(())
         }
