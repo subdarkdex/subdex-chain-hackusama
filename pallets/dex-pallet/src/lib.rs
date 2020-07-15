@@ -139,9 +139,27 @@ decl_module! {
         }
 
         #[weight = 10_000]
-        pub fn token_to_ksm_swap(origin, token: TokenId, token_amount: TAmount,min_ksm_received : TAmount, receiver : T::AccountId) -> dispatch::DispatchResult {
-            let who = ensure_signed(origin)?;
+        pub fn token_to_ksm_swap(origin, token: TokenId, token_amount: TAmount, min_ksm_received : TAmount, receiver : T::AccountId) -> dispatch::DispatchResult {
+            let sender = ensure_signed(origin)?;
+            ensure!(PairStructs::<T>::contains_key(token), Error::<T>::PairNotExist);
+            let mut pair = PairStructs::<T>::get(token);
 
+            let fee = token_amount / pair.fee_rate;
+            pair.token_pool += token_amount;
+            let temp_token_pool = pair.token_pool - fee;
+            let new_ksm_pool = pair.invariant / temp_token_pool;
+            let ksm_out = pair.ksm_pool - new_ksm_pool;
+
+
+            ensure!(ksm_out >= min_ksm_received, Error::<T>::LowAmountOut);
+            ensure!(ksm_out <= pair.ksm_pool, Error::<T>::InsufficientPool);
+            pair.ksm_pool = new_ksm_pool;
+            pair.invariant = pair.token_pool * pair.ksm_pool;
+
+            // transfer `token_amount` to our address
+            // transfer `ksm_amount` to receiver
+
+            Self::deposit_event(RawEvent::Exchanged(token, KSM_ACCOUNT_ID, token_amount, sender));
             Ok(())
         }
 
