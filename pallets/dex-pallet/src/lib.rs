@@ -19,6 +19,7 @@ type TokenId = u128;
 type TShares = u128;
 type TAmount = u128;
 
+const KSM_ACCOUNT_ID: TAmount = 0;
 #[cfg_attr(feature = "std", derive(Serialize, Deserialize))]
 #[derive(Encode, Decode, Clone, PartialEq, Eq, Debug)]
 pub struct TokensPair<T: Trait> {
@@ -36,11 +37,11 @@ pub trait Trait: system::Trait {
 impl<T: Trait> Default for TokensPair<T> {
     fn default() -> Self {
         Self {
-            fee_rate: 0u128,
-            ksm_pool: 0u128,
-            token_pool: 0u128,
-            invariant: 0u128,
-            total_shares: 0u128,
+            fee_rate: 0,
+            ksm_pool: 0,
+            token_pool: 0,
+            invariant: 0,
+            total_shares: 0,
             shares: BTreeMap::new(),
         }
     }
@@ -69,10 +70,13 @@ decl_error! {
     pub enum Error for Module<T: Trait> {
         Initialized,
         PairNotExist,
+        PairExist,
         InvariantNotNull,
         TotalSharesNotNull,
         LowKsmAmount,
         LowTokenAmount,
+        LowAmountOut,
+        InsufficientPool
     }
 }
 
@@ -87,9 +91,9 @@ decl_module! {
         #[weight = 10_000]
         pub fn initialize_exchange(origin, token: TokenId, ksm_amount : TAmount,  token_amount: TAmount) -> dispatch::DispatchResult {
             let sender = ensure_signed(origin)?;
-            ensure!(PairStructs::<T>::contains_key(token), Error::<T>::PairNotExist);
+            ensure!(!PairStructs::<T>::contains_key(token), Error::<T>::PairExist);
 
-            let mut pair = PairStructs::<T>::get(token);
+            let mut pair = TokensPair::<T>::default();
             ensure!(pair.invariant != 0 , Error::<T>::InvariantNotNull);
             ensure!(pair.total_shares != 0 , Error::<T>::TotalSharesNotNull);
             ensure!(ksm_amount > 0 , Error::<T>::LowKsmAmount);
@@ -98,30 +102,51 @@ decl_module! {
             pair.token_pool = token_amount;
             pair.invariant = token_amount * ksm_amount;
             let total_shares = 1000u128;
-            // pair.shares[&sender] = total_shares;
+            pair.shares.insert(sender.clone(), total_shares);
             pair.invariant = total_shares;
+            PairStructs::<T>::insert(token, pair);
 
             // transfer `ksm_amount` to our address
             // transfer `token_amount` to our address
+
+            // event
+            Self::deposit_event(RawEvent::Invested(sender, total_shares));
             Ok(())
         }
 
         #[weight = 10_000]
-        pub fn ksm_to_token_swap(origin, token: TokenId, ksm_amount : TAmount,  min_tokens_received: TAmount) -> dispatch::DispatchResult {
+        pub fn ksm_to_token_swap(origin, token: TokenId, ksm_amount : TAmount,  min_tokens_received: TAmount, receiver : T::AccountId) -> dispatch::DispatchResult {
+            let sender = ensure_signed(origin)?;
+            ensure!(PairStructs::<T>::contains_key(token), Error::<T>::PairNotExist);
+            let mut pair = PairStructs::<T>::get(token);
+
+            let fee = ksm_amount / pair.fee_rate;
+            pair.ksm_pool += ksm_amount;
+            let temp_ksm_pool = pair.ksm_pool - fee;
+            let new_token_pool = pair.invariant / temp_ksm_pool;
+            let tokens_out = pair.token_pool - new_token_pool;
+
+            ensure!(tokens_out >= min_tokens_received, Error::<T>::LowAmountOut);
+            ensure!(tokens_out <= pair.token_pool, Error::<T>::InsufficientPool);
+            pair.token_pool = new_token_pool;
+            pair.invariant = pair.token_pool * pair.ksm_pool;
+
+            // transfer `ksm_amount` to our address
+            // transfer `token_amount` to receiver
+
+            Self::deposit_event(RawEvent::Exchanged(KSM_ACCOUNT_ID, token, ksm_amount, sender));
+            Ok(())
+        }
+
+        #[weight = 10_000]
+        pub fn token_to_ksm_swap(origin, token: TokenId, token_amount: TAmount,min_ksm_received : TAmount, receiver : T::AccountId) -> dispatch::DispatchResult {
             let who = ensure_signed(origin)?;
 
             Ok(())
         }
 
         #[weight = 10_000]
-        pub fn token_to_ksm_swap(origin, token: TokenId,   token_amount: TAmount,min_ksm_received : TAmount) -> dispatch::DispatchResult {
-            let who = ensure_signed(origin)?;
-
-            Ok(())
-        }
-
-        #[weight = 10_000]
-        pub fn token_to_token_swap(origin, token_from: TokenId, token_to: TokenId, token_amount: TAmount, min_token_received : TAmount) -> dispatch::DispatchResult {
+        pub fn token_to_token_swap(origin, token_from: TokenId, token_to: TokenId, token_amount: TAmount, min_token_received : TAmount, receiver : T::AccountId) -> dispatch::DispatchResult {
             let who = ensure_signed(origin)?;
 
             Ok(())
