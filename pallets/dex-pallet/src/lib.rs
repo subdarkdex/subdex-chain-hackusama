@@ -1,7 +1,7 @@
 #![cfg_attr(not(feature = "std"), no_std)]
 
 use codec::{Decode, Encode};
-use frame_support::{decl_error, decl_event, decl_module, decl_storage, dispatch};
+use frame_support::{decl_error, decl_event, decl_module, decl_storage, dispatch, ensure};
 use frame_system::{self as system, ensure_signed};
 use sp_std::vec::Vec;
 use sp_std::{collections::btree_map::BTreeMap, prelude::*};
@@ -47,7 +47,7 @@ impl<T: Trait> Default for TokensPair<T> {
 }
 decl_storage! {
     trait Store for Module<T: Trait> as TemplateModule {
-        pub SupportedTokens: Vec<TokenId>;
+        pub SupportedTokens get(fn supported_tokens): Vec<TokenId>;
         pub PairStructs get(fn pair_structs): map hasher(blake2_128_concat) TokenId => TokensPair<T>;
     }
 }
@@ -67,10 +67,12 @@ decl_event!(
 // The pallet's errors
 decl_error! {
     pub enum Error for Module<T: Trait> {
-        /// Value was None
-        NoneValue,
-        /// Value reached maximum and cannot be incremented further
-        StorageOverflow,
+        Initialized,
+        PairNotExist,
+        InvariantNotNull,
+        TotalSharesNotNull,
+        LowKsmAmount,
+        LowTokenAmount,
     }
 }
 
@@ -84,8 +86,23 @@ decl_module! {
 
         #[weight = 10_000]
         pub fn initialize_exchange(origin, token: TokenId, ksm_amount : TAmount,  token_amount: TAmount) -> dispatch::DispatchResult {
-            let who = ensure_signed(origin)?;
+            let sender = ensure_signed(origin)?;
+            ensure!(PairStructs::<T>::contains_key(token), Error::<T>::PairNotExist);
 
+            let mut pair = PairStructs::<T>::get(token);
+            ensure!(pair.invariant != 0 , Error::<T>::InvariantNotNull);
+            ensure!(pair.total_shares != 0 , Error::<T>::TotalSharesNotNull);
+            ensure!(ksm_amount > 0 , Error::<T>::LowKsmAmount);
+            ensure!(token_amount > 0 , Error::<T>::LowTokenAmount);
+            pair.ksm_pool = ksm_amount;
+            pair.token_pool = token_amount;
+            pair.invariant = token_amount * ksm_amount;
+            let total_shares = 1000u128;
+            // pair.shares[&sender] = total_shares;
+            pair.invariant = total_shares;
+
+            // transfer `ksm_amount` to our address
+            // transfer `token_amount` to our address
             Ok(())
         }
 
