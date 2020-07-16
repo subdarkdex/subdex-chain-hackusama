@@ -54,16 +54,76 @@ impl<T: Trait> TokensPair<T> {
         shares: TShares,
         sender: T::AccountId,
     ) -> Self {
-        let shares_map = BTreeMap::new();
-        shares_map.insert(sender, shares);
+        let mut shares_map = BTreeMap::new();
+        shares_map.insert(sender.clone(), shares);
         Self {
-            fee_rate: 0,
+            fee_rate: 333,
             ksm_pool: ksm_amount,
             token_pool: token_amount,
             invariant: ksm_amount * token_amount,
             total_shares: shares,
             shares: shares_map,
         }
+    }
+
+    pub fn calculate_ksm_to_token_swap(&self, ksm_amount: TAmount) -> (TAmount, TAmount, TAmount) {
+        let fee = ksm_amount / self.fee_rate;
+        let new_ksm_pool = self.ksm_pool + ksm_amount;
+        let temp_ksm_pool = new_ksm_pool - fee;
+        let new_token_pool = self.invariant / temp_ksm_pool;
+        let tokens_out = self.token_pool - new_token_pool;
+        (new_ksm_pool, new_token_pool, tokens_out)
+    }
+
+    pub fn calculate_token_to_ksm_swap(
+        &self,
+        token_amount: TAmount,
+    ) -> (TAmount, TAmount, TAmount) {
+        let fee = token_amount / self.fee_rate;
+        let new_token_pool = self.token_pool + token_amount;
+        let temp_token_pool = new_token_pool - fee;
+        let new_ksm_pool = self.invariant / temp_token_pool;
+        let ksm_out = self.ksm_pool - new_ksm_pool;
+        (new_ksm_pool, new_token_pool, ksm_out)
+    }
+
+    pub fn invest(
+        &mut self,
+        ksm_amount: TAmount,
+        token_amount: TAmount,
+        shares: TShares,
+        sender: T::AccountId,
+    ) {
+        self.shares.insert(sender.clone(), shares);
+        self.total_shares += shares;
+        self.ksm_pool += ksm_amount;
+        self.token_pool += token_amount;
+        self.invariant = self.ksm_pool * self.token_pool;
+    }
+
+    pub fn divest(
+        &mut self,
+        ksm_amount: TAmount,
+        token_amount: TAmount,
+        shares: TShares,
+        sender: T::AccountId,
+    ) {
+        self.shares
+            .insert(sender.clone(), self.shares.get(&sender).unwrap() - shares);
+        self.total_shares -= shares;
+        self.ksm_pool -= ksm_amount;
+        self.token_pool -= token_amount;
+        if self.total_shares == 0 {
+            self.invariant = 0;
+        } else {
+            self.invariant = self.ksm_pool * self.token_pool;
+        }
+    }
+
+    pub fn update_pools(&mut self, ksm_pool: TAmount, token_pool: TAmount) {
+        self.ksm_pool = ksm_pool;
+        self.token_pool = token_pool;
+        self.invariant = self.ksm_pool * self.token_pool;
     }
 }
 decl_storage! {
@@ -113,7 +173,7 @@ decl_module! {
         pub fn initialize_exchange(origin, token: TokenId, ksm_amount : TAmount,  token_amount: TAmount) -> dispatch::DispatchResult {
             let sender = ensure_signed(origin)?;
             if PairStructs::<T>::contains_key(token) {
-                let  pair = PairStructs::<T>::get(token);
+                let  pair = Self::pair_structs(token);
                 ensure!(pair.invariant != 0 , Error::<T>::InvariantNotNull);
                 ensure!(pair.total_shares != 0 , Error::<T>::TotalSharesNotNull);
                 ensure!(ksm_amount > 0 , Error::<T>::LowKsmAmount);
@@ -121,7 +181,7 @@ decl_module! {
             }
 
             let total_shares = 1000u128;
-            let pair = TokensPair::<T>::initialize_new(ksm_amount, token_amount, total_shares, sender);
+            let pair = TokensPair::<T>::initialize_new(ksm_amount, token_amount, total_shares, sender.clone());
             PairStructs::<T>::insert(token, pair);
 
             // transfer `ksm_amount` to our address
@@ -135,21 +195,18 @@ decl_module! {
         pub fn ksm_to_token_swap(origin, token: TokenId, ksm_amount : TAmount,  min_tokens_received: TAmount, receiver : T::AccountId) -> dispatch::DispatchResult {
             let sender = ensure_signed(origin)?;
             ensure!(PairStructs::<T>::contains_key(token), Error::<T>::PairNotExist);
-            let mut pair = PairStructs::<T>::get(token);
+            let pair = Self::pair_structs(token);
 
-            let fee = ksm_amount / pair.fee_rate;
-            pair.ksm_pool += ksm_amount;
-            let temp_ksm_pool = pair.ksm_pool - fee;
-            let new_token_pool = pair.invariant / temp_ksm_pool;
-            let tokens_out = pair.token_pool - new_token_pool;
+            let (new_ksm_pool, new_token_pool, tokens_out) = pair.calculate_ksm_to_token_swap(ksm_amount);
 
             ensure!(tokens_out >= min_tokens_received, Error::<T>::LowAmountOut);
             ensure!(tokens_out <= pair.token_pool, Error::<T>::InsufficientPool);
-            pair.token_pool = new_token_pool;
-            pair.invariant = pair.token_pool * pair.ksm_pool;
+            <PairStructs<T>>::mutate(token, |pair| {
+                pair.update_pools(new_ksm_pool, new_token_pool)
+            });
 
             // transfer `ksm_amount` to our address
-            // transfer `token_amount` to receiver
+            // transfer `token_out` to receiver
 
             Self::deposit_event(RawEvent::Exchanged(KSM_ACCOUNT_ID, token, ksm_amount, sender));
             Ok(())
@@ -159,22 +216,18 @@ decl_module! {
         pub fn token_to_ksm_swap(origin, token: TokenId, token_amount: TAmount, min_ksm_received : TAmount, receiver : T::AccountId) -> dispatch::DispatchResult {
             let sender = ensure_signed(origin)?;
             ensure!(PairStructs::<T>::contains_key(token), Error::<T>::PairNotExist);
-            let mut pair = PairStructs::<T>::get(token);
+            let pair = Self::pair_structs(token);
 
-            let fee = token_amount / pair.fee_rate;
-            pair.token_pool += token_amount;
-            let temp_token_pool = pair.token_pool - fee;
-            let new_ksm_pool = pair.invariant / temp_token_pool;
-            let ksm_out = pair.ksm_pool - new_ksm_pool;
-
+            let (new_ksm_pool, new_token_pool, ksm_out) = pair.calculate_token_to_ksm_swap(token_amount);
 
             ensure!(ksm_out >= min_ksm_received, Error::<T>::LowAmountOut);
             ensure!(ksm_out <= pair.ksm_pool, Error::<T>::InsufficientPool);
-            pair.ksm_pool = new_ksm_pool;
-            pair.invariant = pair.token_pool * pair.ksm_pool;
+            <PairStructs<T>>::mutate(token, |pair| {
+                pair.update_pools(new_ksm_pool, new_token_pool)
+            });
 
             // transfer `token_amount` to our address
-            // transfer `ksm_amount` to receiver
+            // transfer `ksm_out` to receiver
 
             Self::deposit_event(RawEvent::Exchanged(token, KSM_ACCOUNT_ID, token_amount, sender));
             Ok(())
@@ -186,29 +239,30 @@ decl_module! {
             ensure!(PairStructs::<T>::contains_key(token_from), Error::<T>::PairNotExist);
             ensure!(PairStructs::<T>::contains_key(token_to), Error::<T>::PairNotExist);
             ensure!(token_from != token_to, Error::<T>::ForbiddenPair);
-            let mut pair_from = PairStructs::<T>::get(token_from);
-            let mut pair_to = PairStructs::<T>::get(token_to);
+            let pair_from = Self::pair_structs(token_from);
+            let pair_to = Self::pair_structs(token_to);
 
-            let fee = token_amount / pair_from.fee_rate;
-            pair_from.token_pool += token_amount;
-            let temp_token_pool = pair_from.token_pool - fee;
-            let new_ksm_pool = pair_from.invariant / temp_token_pool;
-            let ksm_out = pair_from.ksm_pool - new_ksm_pool;
+            let (new_ksm_pool_from, new_token_pool_from, ksm_out) = pair_from.calculate_token_to_ksm_swap(token_amount);
 
             ensure!(ksm_out <= pair_from.ksm_pool, Error::<T>::InsufficientPool);
-            pair_from.ksm_pool = new_ksm_pool;
-            pair_from.invariant = pair_from.token_pool * pair_from.ksm_pool;
 
-            let fee = ksm_out / pair_to.fee_rate;
-            pair_to.ksm_pool += ksm_out;
-            let temp_ksm_pool = pair_to.ksm_pool - fee;
-            let new_token_pool = pair_to.invariant / temp_ksm_pool;
-            let tokens_out = pair_to.token_pool - new_token_pool;
+
+            let (new_ksm_pool_to, new_token_pool_to, tokens_out) = pair_to.calculate_ksm_to_token_swap(ksm_out);
 
             ensure!(tokens_out >= min_tokens_received, Error::<T>::LowAmountOut);
             ensure!(tokens_out <= pair_to.token_pool, Error::<T>::InsufficientPool);
-            pair_to.token_pool = new_token_pool;
-            pair_to.invariant = pair_to.token_pool * pair_to.ksm_pool;
+
+            //
+            // == MUTATION SAFE ==
+            //
+
+            <PairStructs<T>>::mutate(token_from, |pair| {
+                pair.update_pools(new_ksm_pool_from, new_token_pool_from)
+            });
+            <PairStructs<T>>::mutate(token_to, |pair| {
+                pair.update_pools(new_ksm_pool_to, new_token_pool_to)
+            });
+
 
             // transfer `token_amount` to our address
             // transfer `tokens_out` to receiver
@@ -221,7 +275,7 @@ decl_module! {
         pub fn invest_liquidity(origin, token: TokenId, shares: TShares) -> dispatch::DispatchResult {
             let sender = ensure_signed(origin)?;
             ensure!(PairStructs::<T>::contains_key(token), Error::<T>::PairNotExist);
-            let mut pair = PairStructs::<T>::get(token);
+            let pair = Self::pair_structs(token);
 
             let ksm_per_share = pair.ksm_pool / pair.total_shares;
             let ksm_cost = ksm_per_share * shares;
@@ -232,19 +286,14 @@ decl_module! {
             } else {
                 shares
             };
-            pair.shares.insert(sender.clone(), updated_shares);
 
-            let prev_shares = match pair.shares.get(&sender) {
-                Some(prev_shares) => prev_shares.clone(),
-                None => 0 as TShares,
-            };
-            pair.shares.insert(sender.clone(), shares + prev_shares);
+            //
+            // == MUTATION SAFE ==
+            //
 
-            pair.total_shares += shares;
-            pair.ksm_pool += ksm_cost;
-            pair.token_pool += tokens_cost;
-            pair.invariant = pair.ksm_pool * pair.token_pool;
-            PairStructs::<T>::insert(token, pair);
+            <PairStructs<T>>::mutate(token, |pair| {
+                pair.invest(ksm_cost, tokens_cost, updated_shares, sender.clone())
+            });
 
             // transfer `ksm_cost` to our address
             // transfer `tokens_cost` to our address
@@ -258,9 +307,7 @@ decl_module! {
             let sender = ensure_signed(origin)?;
             ensure!(shares_burned > 0, Error::<T>::LowShares);
             ensure!(PairStructs::<T>::contains_key(token), Error::<T>::PairNotExist);
-            let mut pair = PairStructs::<T>::get(token);
-
-            pair.shares.insert(sender.clone(), pair.shares.get(&sender) - shares_burned);
+            let pair = Self::pair_structs(token);
 
             let ksm_per_share = pair.ksm_pool / pair.total_shares;
             let ksm_cost = ksm_per_share * shares_burned;
@@ -270,14 +317,13 @@ decl_module! {
             ensure!(ksm_cost >= min_ksm_received, Error::<T>::LowAmountOut);
             ensure!(tokens_cost >= min_token_received, Error::<T>::LowAmountOut);
 
-            pair.total_shares -= shares_burned;
-            pair.ksm_pool -= ksm_cost;
-            pair.token_pool -= tokens_cost;
-            if pair.total_shares == 0 {
-                pair.invariant = 0;
-            } else {
-                pair.invariant = pair.ksm_pool * pair.token_pool;
-            }
+            //
+            // == MUTATION SAFE ==
+            //
+
+            <PairStructs<T>>::mutate(token, |pair| {
+                pair.divest(ksm_cost, tokens_cost, shares_burned, sender.clone())
+            });
 
             // transfer `ksm_cost` to sender
             // transfer `tokens_cost` to sender
