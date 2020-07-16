@@ -46,6 +46,26 @@ impl<T: Trait> Default for TokensPair<T> {
         }
     }
 }
+
+impl<T: Trait> TokensPair<T> {
+    pub fn initialize_new(
+        ksm_amount: TAmount,
+        token_amount: TAmount,
+        shares: TShares,
+        sender: T::AccountId,
+    ) -> Self {
+        let shares_map = BTreeMap::new();
+        shares_map.insert(sender, shares);
+        Self {
+            fee_rate: 0,
+            ksm_pool: ksm_amount,
+            token_pool: token_amount,
+            invariant: ksm_amount * token_amount,
+            total_shares: shares,
+            shares: shares_map,
+        }
+    }
+}
 decl_storage! {
     trait Store for Module<T: Trait> as TemplateModule {
         pub PairStructs get(fn pair_structs): map hasher(blake2_128_concat) TokenId => TokensPair<T>;
@@ -92,19 +112,16 @@ decl_module! {
         #[weight = 10_000]
         pub fn initialize_exchange(origin, token: TokenId, ksm_amount : TAmount,  token_amount: TAmount) -> dispatch::DispatchResult {
             let sender = ensure_signed(origin)?;
-            ensure!(!PairStructs::<T>::contains_key(token), Error::<T>::PairExist);
+            if PairStructs::<T>::contains_key(token) {
+                let  pair = PairStructs::<T>::get(token);
+                ensure!(pair.invariant != 0 , Error::<T>::InvariantNotNull);
+                ensure!(pair.total_shares != 0 , Error::<T>::TotalSharesNotNull);
+                ensure!(ksm_amount > 0 , Error::<T>::LowKsmAmount);
+                ensure!(token_amount > 0 , Error::<T>::LowTokenAmount);
+            }
 
-            let mut pair = TokensPair::<T>::default();
-            ensure!(pair.invariant != 0 , Error::<T>::InvariantNotNull);
-            ensure!(pair.total_shares != 0 , Error::<T>::TotalSharesNotNull);
-            ensure!(ksm_amount > 0 , Error::<T>::LowKsmAmount);
-            ensure!(token_amount > 0 , Error::<T>::LowTokenAmount);
-            pair.ksm_pool = ksm_amount;
-            pair.token_pool = token_amount;
-            pair.invariant = token_amount * ksm_amount;
             let total_shares = 1000u128;
-            pair.shares.insert(sender.clone(), total_shares);
-            pair.total_shares = total_shares;
+            let pair = TokensPair::<T>::initialize_new(ksm_amount, token_amount, total_shares, sender);
             PairStructs::<T>::insert(token, pair);
 
             // transfer `ksm_amount` to our address
@@ -210,6 +227,13 @@ decl_module! {
             let ksm_cost = ksm_per_share * shares;
             let tokens_per_share = pair.token_pool / pair.total_shares;
             let tokens_cost = tokens_per_share * shares;
+            let updated_shares = if let Some(prev_shares) = pair.shares.get(&sender) {
+                prev_shares + shares
+            } else {
+                shares
+            };
+            pair.shares.insert(sender.clone(), updated_shares);
+
             let prev_shares = match pair.shares.get(&sender) {
                 Some(prev_shares) => prev_shares.clone(),
                 None => 0 as TShares,
@@ -236,11 +260,7 @@ decl_module! {
             ensure!(PairStructs::<T>::contains_key(token), Error::<T>::PairNotExist);
             let mut pair = PairStructs::<T>::get(token);
 
-            let prev_shares = match pair.shares.get(&sender) {
-                Some(prev_shares) => prev_shares.clone(),
-                None => 0 as TShares,
-            };
-            pair.shares.insert(sender.clone(), prev_shares - shares_burned);
+            pair.shares.insert(sender.clone(), pair.shares.get(&sender) - shares_burned);
 
             let ksm_per_share = pair.ksm_pool / pair.total_shares;
             let ksm_cost = ksm_per_share * shares_burned;
