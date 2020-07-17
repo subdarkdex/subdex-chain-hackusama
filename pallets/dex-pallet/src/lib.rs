@@ -1,10 +1,10 @@
 #![cfg_attr(not(feature = "std"), no_std)]
 
+use assets;
 use codec::{Decode, Encode};
 use frame_support::{decl_error, decl_event, decl_module, decl_storage, dispatch, ensure};
 use frame_system::{self as system, ensure_signed};
 use sp_std::{collections::btree_map::BTreeMap, prelude::*};
-use assets;
 
 #[cfg(test)]
 mod mock;
@@ -144,8 +144,8 @@ impl<T: Trait> TokensPair<T> {
         ksm_amount: TAmount,
         token_amount: TAmount,
     ) -> dispatch::DispatchResult {
-        ensure!(self.invariant != 0, Error::<T>::InvariantNotNull);
-        ensure!(self.total_shares != 0, Error::<T>::TotalSharesNotNull);
+        ensure!(self.invariant == 0, Error::<T>::InvariantNotNull);
+        ensure!(self.total_shares == 0, Error::<T>::TotalSharesNotNull);
         ensure!(ksm_amount > 0, Error::<T>::LowKsmAmount);
         ensure!(token_amount > 0, Error::<T>::LowTokenAmount);
         Ok(())
