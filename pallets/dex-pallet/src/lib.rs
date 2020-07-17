@@ -138,6 +138,46 @@ impl<T: Trait> TokensPair<T> {
         self.token_pool = token_pool;
         self.invariant = self.ksm_pool * self.token_pool;
     }
+
+    pub fn ensure_launch(
+        &self,
+        ksm_amount: TAmount,
+        token_amount: TAmount,
+    ) -> dispatch::DispatchResult {
+        ensure!(self.invariant != 0, Error::<T>::InvariantNotNull);
+        ensure!(self.total_shares != 0, Error::<T>::TotalSharesNotNull);
+        ensure!(ksm_amount > 0, Error::<T>::LowKsmAmount);
+        ensure!(token_amount > 0, Error::<T>::LowTokenAmount);
+        Ok(())
+    }
+
+    pub fn ensure_tokens_out(
+        &self,
+        tokens_out: TAmount,
+        min_tokens_received: TAmount,
+    ) -> dispatch::DispatchResult {
+        ensure!(tokens_out >= min_tokens_received, Error::<T>::LowAmountOut);
+        ensure!(tokens_out <= self.token_pool, Error::<T>::InsufficientPool);
+        Ok(())
+    }
+
+    pub fn ensure_ksm_out(
+        &self,
+        ksm_out: TAmount,
+        min_ksm_received: TAmount,
+    ) -> dispatch::DispatchResult {
+        ensure!(ksm_out >= min_ksm_received, Error::<T>::LowAmountOut);
+        ensure!(ksm_out <= self.ksm_pool, Error::<T>::InsufficientPool);
+        Ok(())
+    }
+
+    pub fn ensure_pair_exists(token: TokenId) -> dispatch::DispatchResult {
+        ensure!(
+            PairStructs::<T>::contains_key(token),
+            Error::<T>::PairNotExist
+        );
+        Ok(())
+    }
 }
 decl_storage! {
     trait Store for Module<T: Trait> as TemplateModule {
@@ -186,11 +226,8 @@ decl_module! {
         pub fn initialize_exchange(origin, token: TokenId, ksm_amount : TAmount,  token_amount: TAmount) -> dispatch::DispatchResult {
             let sender = ensure_signed(origin)?;
             if PairStructs::<T>::contains_key(token) {
-                let  pair = Self::pair_structs(token);
-                ensure!(pair.invariant != 0 , Error::<T>::InvariantNotNull);
-                ensure!(pair.total_shares != 0 , Error::<T>::TotalSharesNotNull);
-                ensure!(ksm_amount > 0 , Error::<T>::LowKsmAmount);
-                ensure!(token_amount > 0 , Error::<T>::LowTokenAmount);
+                let pair = Self::pair_structs(token);
+                pair.ensure_launch(ksm_amount, token_amount)?;
             }
 
             let total_shares = 1000u128;
@@ -207,13 +244,12 @@ decl_module! {
         #[weight = 10_000]
         pub fn ksm_to_token_swap(origin, token: TokenId, ksm_amount : TAmount,  min_tokens_received: TAmount, receiver : T::AccountId) -> dispatch::DispatchResult {
             let sender = ensure_signed(origin)?;
-            ensure!(PairStructs::<T>::contains_key(token), Error::<T>::PairNotExist);
+            TokensPair::<T>::ensure_pair_exists(token)?;
             let pair = Self::pair_structs(token);
 
             let (new_ksm_pool, new_token_pool, tokens_out) = pair.calculate_ksm_to_token_swap(ksm_amount);
+            pair.ensure_tokens_out(tokens_out, min_tokens_received)?;
 
-            ensure!(tokens_out >= min_tokens_received, Error::<T>::LowAmountOut);
-            ensure!(tokens_out <= pair.token_pool, Error::<T>::InsufficientPool);
             <PairStructs<T>>::mutate(token, |pair| {
                 pair.update_pools(new_ksm_pool, new_token_pool)
             });
@@ -228,13 +264,12 @@ decl_module! {
         #[weight = 10_000]
         pub fn token_to_ksm_swap(origin, token: TokenId, token_amount: TAmount, min_ksm_received : TAmount, receiver : T::AccountId) -> dispatch::DispatchResult {
             let sender = ensure_signed(origin)?;
-            ensure!(PairStructs::<T>::contains_key(token), Error::<T>::PairNotExist);
+            TokensPair::<T>::ensure_pair_exists(token)?;
             let pair = Self::pair_structs(token);
 
             let (new_ksm_pool, new_token_pool, ksm_out) = pair.calculate_token_to_ksm_swap(token_amount);
+            pair.ensure_ksm_out(ksm_out, min_ksm_received)?;
 
-            ensure!(ksm_out >= min_ksm_received, Error::<T>::LowAmountOut);
-            ensure!(ksm_out <= pair.ksm_pool, Error::<T>::InsufficientPool);
             <PairStructs<T>>::mutate(token, |pair| {
                 pair.update_pools(new_ksm_pool, new_token_pool)
             });
@@ -249,21 +284,17 @@ decl_module! {
         #[weight = 10_000]
         pub fn token_to_token_swap(origin, token_from: TokenId, token_to: TokenId, token_amount: TAmount, min_tokens_received : TAmount, receiver : T::AccountId) -> dispatch::DispatchResult {
             let sender = ensure_signed(origin)?;
-            ensure!(PairStructs::<T>::contains_key(token_from), Error::<T>::PairNotExist);
-            ensure!(PairStructs::<T>::contains_key(token_to), Error::<T>::PairNotExist);
+            TokensPair::<T>::ensure_pair_exists(token_from)?;
+            TokensPair::<T>::ensure_pair_exists(token_to)?;
             ensure!(token_from != token_to, Error::<T>::ForbiddenPair);
             let pair_from = Self::pair_structs(token_from);
             let pair_to = Self::pair_structs(token_to);
 
             let (new_ksm_pool_from, new_token_pool_from, ksm_out) = pair_from.calculate_token_to_ksm_swap(token_amount);
-
-            ensure!(ksm_out <= pair_from.ksm_pool, Error::<T>::InsufficientPool);
-
+            pair_from.ensure_ksm_out(ksm_out, 0)?;
 
             let (new_ksm_pool_to, new_token_pool_to, tokens_out) = pair_to.calculate_ksm_to_token_swap(ksm_out);
-
-            ensure!(tokens_out >= min_tokens_received, Error::<T>::LowAmountOut);
-            ensure!(tokens_out <= pair_to.token_pool, Error::<T>::InsufficientPool);
+            pair_to.ensure_tokens_out(tokens_out, min_tokens_received)?;
 
             //
             // == MUTATION SAFE ==
@@ -276,7 +307,6 @@ decl_module! {
                 pair.update_pools(new_ksm_pool_to, new_token_pool_to)
             });
 
-
             // transfer `token_amount` to our address
             // transfer `tokens_out` to receiver
 
@@ -287,7 +317,7 @@ decl_module! {
         #[weight = 10_000]
         pub fn invest_liquidity(origin, token: TokenId, shares: TShares) -> dispatch::DispatchResult {
             let sender = ensure_signed(origin)?;
-            ensure!(PairStructs::<T>::contains_key(token), Error::<T>::PairNotExist);
+            TokensPair::<T>::ensure_pair_exists(token)?;
 
             //
             // == MUTATION SAFE ==
@@ -309,7 +339,7 @@ decl_module! {
         pub fn divest_liquidity(origin, token: TokenId, shares_burned: TShares, min_ksm_received : TAmount, min_token_received : TAmount) -> dispatch::DispatchResult {
             let sender = ensure_signed(origin)?;
             ensure!(shares_burned > 0, Error::<T>::LowShares);
-            ensure!(PairStructs::<T>::contains_key(token), Error::<T>::PairNotExist);
+            TokensPair::<T>::ensure_pair_exists(token)?;
             let pair = Self::pair_structs(token);
             let (ksm_cost, tokens_cost) = pair.calculate_share_price(shares_burned);
 
