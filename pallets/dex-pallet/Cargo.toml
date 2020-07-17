@@ -38,6 +38,13 @@ git = 'https://github.com/paritytech/substrate.git'
 tag = 'v2.0.0-rc4'
 version = '2.0.0-rc4'
 
+[dependencies.assets]
+default-features = false
+git = 'https://github.com/paritytech/substrate.git'
+package = 'pallet-assets'
+tag = 'v2.0.0-rc4'
+version = '2.0.0-rc4'
+
 [dev-dependencies.sp-runtime]
 default-features = false
 git = 'https://github.com/paritytech/substrate.git'
@@ -60,6 +67,7 @@ default = ['std']
 std = [
     'serde',
     'codec/std',
+    'assets/std',
     'frame-support/std',
     'frame-system/std',
     'sp-std/std',

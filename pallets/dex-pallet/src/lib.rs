@@ -4,6 +4,7 @@ use codec::{Decode, Encode};
 use frame_support::{decl_error, decl_event, decl_module, decl_storage, dispatch, ensure};
 use frame_system::{self as system, ensure_signed};
 use sp_std::{collections::btree_map::BTreeMap, prelude::*};
+use assets;
 
 #[cfg(test)]
 mod mock;

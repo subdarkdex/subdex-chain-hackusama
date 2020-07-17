@@ -42,6 +42,7 @@ pub use sp_runtime::BuildStorage;
 pub use sp_runtime::{Perbill, Permill};
 pub use timestamp::Call as TimestampCall;
 
+pub use assets;
 /// Importing a template pallet
 pub use dex_pallet;
 

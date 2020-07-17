@@ -4,6 +4,7 @@ std = [
     'dex-pallet/std',
     'aura/std',
     'balances/std',
+    'assets/std',
     'codec/std',
     'frame-executive/std',
     'frame-support/std',
@@ -56,6 +57,13 @@ version = '2.0.0-rc4'
 [dependencies.frame-support]
 default-features = false
 git = 'https://github.com/paritytech/substrate.git'
+tag = 'v2.0.0-rc4'
+version = '2.0.0-rc4'
+
+[dependencies.assets]
+default-features = false
+git = 'https://github.com/paritytech/substrate.git'
+package = 'pallet-assets'
 tag = 'v2.0.0-rc4'
 version = '2.0.0-rc4'
 
