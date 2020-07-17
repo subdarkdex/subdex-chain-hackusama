@@ -3,7 +3,6 @@
 use codec::{Decode, Encode};
 use frame_support::{decl_error, decl_event, decl_module, decl_storage, dispatch, ensure};
 use frame_system::{self as system, ensure_signed};
-use sp_std::vec::Vec;
 use sp_std::{collections::btree_map::BTreeMap, prelude::*};
 
 #[cfg(test)]
@@ -161,6 +160,21 @@ impl<T: Trait> TokensPair<T> {
         Ok(())
     }
 
+    pub fn ensure_burned_shares(
+        &self,
+        sender: T::AccountId,
+        shares_burned: TShares,
+    ) -> dispatch::DispatchResult {
+        ensure!(shares_burned > 0, Error::<T>::LowShares);
+        let shares = if let Some(shares) = self.shares.get(&sender) {
+            shares.clone()
+        } else {
+            0
+        };
+        ensure!(shares >= shares_burned, Error::<T>::InsufficientShares);
+        Ok(())
+    }
+
     pub fn ensure_ksm_out(
         &self,
         ksm_out: TAmount,
@@ -211,13 +225,34 @@ decl_error! {
         InsufficientPool,
         ForbiddenPair,
         LowShares,
+        InsufficientShares,
     }
 }
 
+impl<T: Trait> Module<T> {
+    pub fn ensure_tokens_exchange(
+        token_from: TokenId,
+        token_to: TokenId,
+    ) -> dispatch::DispatchResult {
+        ensure!(token_from != token_to, Error::<T>::ForbiddenPair);
+        Ok(())
+    }
+    pub fn ensure_divest_expectations(
+        ksm_cost: TAmount,
+        tokens_cost: TAmount,
+        min_ksm_received: TAmount,
+        min_token_received: TAmount,
+    ) -> dispatch::DispatchResult {
+        ensure!(ksm_cost >= min_ksm_received, Error::<T>::LowAmountOut);
+        ensure!(tokens_cost >= min_token_received, Error::<T>::LowAmountOut);
+        Ok(())
+    }
+}
 // The pallet's dispatchable functions.
 decl_module! {
     /// The module declaration.
     pub struct Module<T: Trait> for enum Call where origin: T::Origin {
+
         type Error = Error<T>;
 
         fn deposit_event() = default;
@@ -286,7 +321,8 @@ decl_module! {
             let sender = ensure_signed(origin)?;
             TokensPair::<T>::ensure_pair_exists(token_from)?;
             TokensPair::<T>::ensure_pair_exists(token_to)?;
-            ensure!(token_from != token_to, Error::<T>::ForbiddenPair);
+            Self::ensure_tokens_exchange(token_from,token_to)?;
+
             let pair_from = Self::pair_structs(token_from);
             let pair_to = Self::pair_structs(token_to);
 
@@ -338,13 +374,14 @@ decl_module! {
         #[weight = 10_000]
         pub fn divest_liquidity(origin, token: TokenId, shares_burned: TShares, min_ksm_received : TAmount, min_token_received : TAmount) -> dispatch::DispatchResult {
             let sender = ensure_signed(origin)?;
-            ensure!(shares_burned > 0, Error::<T>::LowShares);
             TokensPair::<T>::ensure_pair_exists(token)?;
             let pair = Self::pair_structs(token);
+
+            pair.ensure_burned_shares(sender.clone(), shares_burned)?;
+
             let (ksm_cost, tokens_cost) = pair.calculate_share_price(shares_burned);
 
-            ensure!(ksm_cost >= min_ksm_received, Error::<T>::LowAmountOut);
-            ensure!(tokens_cost >= min_token_received, Error::<T>::LowAmountOut);
+            Self::ensure_divest_expectations(ksm_cost, tokens_cost, min_ksm_received, min_token_received)?;
 
             //
             // == MUTATION SAFE ==
