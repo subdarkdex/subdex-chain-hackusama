@@ -87,6 +87,14 @@ impl<T: Trait> TokensPair<T> {
         (new_ksm_pool, new_token_pool, ksm_out)
     }
 
+    pub fn calculate_share_price(&self, shares: TShares) -> (TAmount, TAmount) {
+        let ksm_per_share = self.ksm_pool / self.total_shares;
+        let ksm_cost = ksm_per_share * shares;
+        let tokens_per_share = self.token_pool / self.total_shares;
+        let tokens_cost = tokens_per_share * shares;
+        (ksm_cost, tokens_cost)
+    }
+
     pub fn invest(
         &mut self,
         ksm_amount: TAmount,
@@ -94,7 +102,12 @@ impl<T: Trait> TokensPair<T> {
         shares: TShares,
         sender: T::AccountId,
     ) {
-        self.shares.insert(sender.clone(), shares);
+        let updated_shares = if let Some(prev_shares) = self.shares.get(&sender) {
+            prev_shares + shares
+        } else {
+            shares
+        };
+        self.shares.insert(sender.clone(), updated_shares);
         self.total_shares += shares;
         self.ksm_pool += ksm_amount;
         self.token_pool += token_amount;
@@ -275,24 +288,14 @@ decl_module! {
         pub fn invest_liquidity(origin, token: TokenId, shares: TShares) -> dispatch::DispatchResult {
             let sender = ensure_signed(origin)?;
             ensure!(PairStructs::<T>::contains_key(token), Error::<T>::PairNotExist);
-            let pair = Self::pair_structs(token);
-
-            let ksm_per_share = pair.ksm_pool / pair.total_shares;
-            let ksm_cost = ksm_per_share * shares;
-            let tokens_per_share = pair.token_pool / pair.total_shares;
-            let tokens_cost = tokens_per_share * shares;
-            let updated_shares = if let Some(prev_shares) = pair.shares.get(&sender) {
-                prev_shares + shares
-            } else {
-                shares
-            };
 
             //
             // == MUTATION SAFE ==
             //
 
             <PairStructs<T>>::mutate(token, |pair| {
-                pair.invest(ksm_cost, tokens_cost, updated_shares, sender.clone())
+                let (ksm_cost, tokens_cost) = pair.calculate_share_price(shares);
+                pair.invest(ksm_cost, tokens_cost, shares, sender.clone())
             });
 
             // transfer `ksm_cost` to our address
@@ -308,11 +311,7 @@ decl_module! {
             ensure!(shares_burned > 0, Error::<T>::LowShares);
             ensure!(PairStructs::<T>::contains_key(token), Error::<T>::PairNotExist);
             let pair = Self::pair_structs(token);
-
-            let ksm_per_share = pair.ksm_pool / pair.total_shares;
-            let ksm_cost = ksm_per_share * shares_burned;
-            let tokens_per_share = pair.token_pool / pair.total_shares;
-            let tokens_cost = tokens_per_share * shares_burned;
+            let (ksm_cost, tokens_cost) = pair.calculate_share_price(shares_burned);
 
             ensure!(ksm_cost >= min_ksm_received, Error::<T>::LowAmountOut);
             ensure!(tokens_cost >= min_token_received, Error::<T>::LowAmountOut);
