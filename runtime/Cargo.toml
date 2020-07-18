@@ -1,8 +1,10 @@
 [features]
 default = ['std']
 std = [
+    'dex-pallet/std',
     'aura/std',
     'balances/std',
+    'assets/std',
     'codec/std',
     'frame-executive/std',
     'frame-support/std',
@@ -25,7 +27,6 @@ std = [
     'system/std',
     'timestamp/std',
     'transaction-payment/std',
-    'template/std',
 ]
 [dependencies.aura]
 default-features = false
@@ -56,6 +57,13 @@ version = '2.0.0-rc4'
 [dependencies.frame-support]
 default-features = false
 git = 'https://github.com/paritytech/substrate.git'
+tag = 'v2.0.0-rc4'
+version = '2.0.0-rc4'
+
+[dependencies.assets]
+default-features = false
+git = 'https://github.com/paritytech/substrate.git'
+package = 'pallet-assets'
 tag = 'v2.0.0-rc4'
 version = '2.0.0-rc4'
 
@@ -164,11 +172,6 @@ package = 'frame-system'
 tag = 'v2.0.0-rc4'
 version = '2.0.0-rc4'
 
-[dependencies.template]
-default-features = false
-package = 'pallet-template'
-path = '../pallets/template'
-version = '2.0.0-rc4'
 
 [dependencies.timestamp]
 default-features = false
@@ -183,6 +186,11 @@ git = 'https://github.com/paritytech/substrate.git'
 package = 'pallet-transaction-payment'
 tag = 'v2.0.0-rc4'
 version = '2.0.0-rc4'
+
+[dependencies.dex-pallet]
+default-features = false
+path = '../pallets/dex-pallet'
+
 
 [package]
 authors = ['Substrate DevHub <https://github.com/substrate-developer-hub>']
