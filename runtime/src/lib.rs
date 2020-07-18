@@ -28,6 +28,8 @@ use sp_version::RuntimeVersion;
 
 // A few exports that help ease life for downstream crates.
 pub use balances::Call as BalancesCall;
+pub use assets::Call as AssetsCall;
+
 pub use frame_support::{
     construct_runtime, parameter_types,
     traits::{KeyOwnerProofSystem, Randomness},
@@ -37,14 +39,13 @@ pub use frame_support::{
     },
     StorageValue,
 };
+
 #[cfg(any(feature = "std", test))]
 pub use sp_runtime::BuildStorage;
 pub use sp_runtime::{Perbill, Permill};
 pub use timestamp::Call as TimestampCall;
 
-pub use assets;
-/// Importing a template pallet
-pub use dex_pallet;
+pub use dex_pallet::Call as DexPalletCall;
 
 /// An index to a block.
 pub type BlockNumber = u32;
@@ -62,6 +63,9 @@ pub type AccountIndex = u32;
 
 /// Balance of an account.
 pub type Balance = u128;
+
+/// Asset id for custom assets
+pub type AssetId = u64;
 
 /// Index of a transaction in the chain.
 pub type Index = u32;
@@ -257,9 +261,16 @@ impl sudo::Trait for Runtime {
     type Call = Call;
 }
 
+impl assets::Trait for Runtime {
+    type Event = Event;
+    type Balance = Balance;
+    type AssetId = AssetId;
+}
+
 impl dex_pallet::Trait for Runtime {
     type Event = Event;
 }
+
 construct_runtime!(
     pub enum Runtime where
         Block = Block,
@@ -272,10 +283,11 @@ construct_runtime!(
         Aura: aura::{Module, Config<T>, Inherent(Timestamp)},
         Grandpa: grandpa::{Module, Call, Storage, Config, Event},
         Balances: balances::{Module, Call, Storage, Config<T>, Event<T>},
+        Assets: assets::{Module, Call, Storage, Event<T>},
         TransactionPayment: transaction_payment::{Module, Storage},
         Sudo: sudo::{Module, Call, Config<T>, Storage, Event<T>},
-        // Used for the module template in `./template.rs`
-        TemplateModule: dex_pallet::{Module, Call, Storage, Event<T>},
+        
+        DexPallet: dex_pallet::{Module, Call, Storage, Event<T>},
     }
 );
 

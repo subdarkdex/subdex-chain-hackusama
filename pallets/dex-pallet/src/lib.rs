@@ -1,6 +1,5 @@
 #![cfg_attr(not(feature = "std"), no_std)]
 
-use assets;
 use codec::{Decode, Encode};
 use frame_support::{decl_error, decl_event, decl_module, decl_storage, dispatch, ensure};
 use frame_system::{self as system, ensure_signed};
@@ -20,7 +19,9 @@ type TShares = u128;
 type TAmount = u128;
 
 const KSM_ACCOUNT_ID: TAmount = 0;
+
 const INITIAL_SHARES: u128 = 1000;
+
 #[cfg_attr(feature = "std", derive(Serialize, Deserialize))]
 #[derive(Encode, Decode, Clone, PartialEq, Eq, Debug)]
 pub struct TokensPair<T: Trait> {
@@ -32,9 +33,10 @@ pub struct TokensPair<T: Trait> {
     shares: BTreeMap<T::AccountId, TShares>,
 }
 
-pub trait Trait: system::Trait {
+pub trait Trait: system::Trait + assets::Trait + balances::Trait {
     type Event: From<Event<Self>> + Into<<Self as system::Trait>::Event>;
 }
+
 impl<T: Trait> Default for TokensPair<T> {
     fn default() -> Self {
         Self {
