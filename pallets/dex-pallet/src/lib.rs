@@ -14,7 +14,6 @@ mod tests;
 #[cfg(feature = "std")]
 pub use serde::{Deserialize, Serialize};
 
-type TokenId = u128;
 type TShares = u128;
 type TAmount = u128;
 
@@ -34,7 +33,7 @@ pub struct TokensPair<T: Trait> {
 }
 
 pub trait Trait: system::Trait + assets::Trait + balances::Trait {
-    type Event: From<Event<Self>> + Into<<Self as system::Trait>::Event>;
+    type Event: From<Event<Self>> + Into<<Self as system::Trait>::Event> + Into<<Self as assets::Trait>::Event> + Into<<Self as balances::Trait>::Event>;
 }
 
 impl<T: Trait> Default for TokensPair<T> {
@@ -191,7 +190,7 @@ impl<T: Trait> TokensPair<T> {
 }
 decl_storage! {
     trait Store for Module<T: Trait> as TemplateModule {
-        pub PairStructs get(fn pair_structs): map hasher(blake2_128_concat) TokenId => TokensPair<T>;
+        pub PairStructs get(fn pair_structs): map hasher(blake2_128_concat) T::AssetId => TokensPair<T>;
     }
 }
 
@@ -199,11 +198,12 @@ decl_event!(
     pub enum Event<T>
     where
         AccountId = <T as system::Trait>::AccountId,
+        AssetId = <T as assets::Trait>::AssetId,
     {
-        Exchanged(TokenId, TokenId, TAmount, AccountId),
+        Exchanged(AssetId, AssetId, TAmount, AccountId),
         Invested(AccountId, TShares),
         Divested(AccountId, TShares),
-        Withdrawn(TokenId, TAmount, AccountId),
+        Withdrawn(AssetId, TAmount, AccountId),
     }
 );
 
@@ -228,8 +228,8 @@ decl_error! {
 
 impl<T: Trait> Module<T> {
     pub fn ensure_tokens_exchange(
-        token_from: TokenId,
-        token_to: TokenId,
+        token_from: T::AssetId,
+        token_to: T::AssetId,
     ) -> dispatch::DispatchResult {
         ensure!(token_from != token_to, Error::<T>::ForbiddenPair);
         Ok(())
@@ -244,7 +244,7 @@ impl<T: Trait> Module<T> {
         ensure!(tokens_cost >= min_token_received, Error::<T>::LowAmountOut);
         Ok(())
     }
-    pub fn ensure_pair_exists(token: TokenId) -> Result<TokensPair<T>, Error<T>> {
+    pub fn ensure_pair_exists(token: T::AssetId) -> Result<TokensPair<T>, Error<T>> {
         ensure!(
             PairStructs::<T>::contains_key(token),
             Error::<T>::PairNotExist
@@ -262,8 +262,8 @@ decl_module! {
         fn deposit_event() = default;
 
         #[weight = 10_000]
-        pub fn initialize_exchange(origin, token: TokenId, ksm_amount : TAmount,  token_amount: TAmount) -> dispatch::DispatchResult {
-            let sender = ensure_signed(origin)?;
+        pub fn initialize_exchange(origin, token: T::AssetId, ksm_amount : TAmount,  token_amount: TAmount) -> dispatch::DispatchResult {
+            let sender = ensure_signed(origin.clone())?;
             if PairStructs::<T>::contains_key(token) {
                 let pair = Self::pair_structs(token);
                 pair.ensure_launch(ksm_amount, token_amount)?;
@@ -280,7 +280,7 @@ decl_module! {
         }
 
         #[weight = 10_000]
-        pub fn ksm_to_token_swap(origin, token: TokenId, ksm_amount : TAmount,  min_tokens_received: TAmount, receiver : T::AccountId) -> dispatch::DispatchResult {
+        pub fn ksm_to_token_swap(origin, token: T::AssetId, ksm_amount : TAmount,  min_tokens_received: TAmount, receiver : T::AccountId) -> dispatch::DispatchResult {
             let sender = ensure_signed(origin)?;
             let pair = Self::ensure_pair_exists(token)?;
 
@@ -295,12 +295,12 @@ decl_module! {
             // transfer `ksm_amount` to our address
             // transfer `token_out` to receiver
 
-            Self::deposit_event(RawEvent::Exchanged(KSM_ACCOUNT_ID, token, ksm_amount, sender));
+            // Self::deposit_event(RawEvent::Exchanged(KSM_ACCOUNT_ID, token, ksm_amount, sender));
             Ok(())
         }
 
         #[weight = 10_000]
-        pub fn token_to_ksm_swap(origin, token: TokenId, token_amount: TAmount, min_ksm_received : TAmount, receiver : T::AccountId) -> dispatch::DispatchResult {
+        pub fn token_to_ksm_swap(origin, token: T::AssetId, token_amount: TAmount, min_ksm_received : TAmount, receiver : T::AccountId) -> dispatch::DispatchResult {
             let sender = ensure_signed(origin)?;
             let pair = Self::ensure_pair_exists(token)?;
 
@@ -314,12 +314,12 @@ decl_module! {
             // transfer `token_amount` to our address
             // transfer `ksm_out` to receiver
 
-            Self::deposit_event(RawEvent::Exchanged(token, KSM_ACCOUNT_ID, token_amount, sender));
+            // Self::deposit_event(RawEvent::Exchanged(token, token_amount, sender));
             Ok(())
         }
 
         #[weight = 10_000]
-        pub fn token_to_token_swap(origin, token_from: TokenId, token_to: TokenId, token_amount: TAmount, min_tokens_received : TAmount, receiver : T::AccountId) -> dispatch::DispatchResult {
+        pub fn token_to_token_swap(origin, token_from: T::AssetId, token_to: T::AssetId, token_amount: TAmount, min_tokens_received : TAmount, receiver : T::AccountId) -> dispatch::DispatchResult {
             let sender = ensure_signed(origin)?;
 
             Self::ensure_tokens_exchange(token_from,token_to)?;
@@ -346,12 +346,12 @@ decl_module! {
             // transfer `token_amount` to our address
             // transfer `tokens_out` to receiver
 
-            Self::deposit_event(RawEvent::Exchanged(token_from, token_to, token_amount, sender));
+            // Self::deposit_event(RawEvent::Exchanged(token_from, token_to, token_amount, sender));
             Ok(())
         }
 
         #[weight = 10_000]
-        pub fn invest_liquidity(origin, token: TokenId, shares: TShares) -> dispatch::DispatchResult {
+        pub fn invest_liquidity(origin, token: T::AssetId, shares: TShares) -> dispatch::DispatchResult {
             let sender = ensure_signed(origin)?;
             Self::ensure_pair_exists(token)?;
 
@@ -372,7 +372,7 @@ decl_module! {
         }
 
         #[weight = 10_000]
-        pub fn divest_liquidity(origin, token: TokenId, shares_burned: TShares, min_ksm_received : TAmount, min_token_received : TAmount) -> dispatch::DispatchResult {
+        pub fn divest_liquidity(origin, token: T::AssetId, shares_burned: TShares, min_ksm_received : TAmount, min_token_received : TAmount) -> dispatch::DispatchResult {
             let sender = ensure_signed(origin)?;
             let pair = Self::ensure_pair_exists(token)?;
 
