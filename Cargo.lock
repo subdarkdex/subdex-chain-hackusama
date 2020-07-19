@@ -787,8 +787,7 @@ version = "2.0.0-rc4"
 dependencies = [
  "frame-support",
  "frame-system",
- "pallet-assets",
- "pallet-balances",
+ "pallet-generic-asset",
  "parity-scale-codec",
  "serde",
  "sp-core",
@@ -2083,6 +2082,9 @@ name = "lazy_static"
 version = "1.4.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "e2abad23fbc42b3700f2f279844dc832adb2b2eb069b2df918f455c4e18cc646"
+dependencies = [
+ "spin",
+]
 
 [[package]]
 name = "lazycell"
@@ -2823,9 +2825,10 @@ dependencies = [
  "frame-executive",
  "frame-support",
  "frame-system",
- "pallet-assets",
+ "lazy_static",
  "pallet-aura",
  "pallet-balances",
+ "pallet-generic-asset",
  "pallet-grandpa",
  "pallet-randomness-collective-flip",
  "pallet-sudo",
@@ -2997,18 +3000,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "pallet-assets"
-version = "2.0.0-rc4"
-source = "git+https://github.com/paritytech/substrate.git?tag=v2.0.0-rc4#00768a1f21a579c478fe5d4f51e1fa71f7db9fd4"
-dependencies = [
- "frame-support",
- "frame-system",
- "parity-scale-codec",
- "serde",
- "sp-runtime",
-]
-
-[[package]]
 name = "pallet-aura"
 version = "2.0.0-rc4"
 source = "git+https://github.com/paritytech/substrate.git?tag=v2.0.0-rc4#00768a1f21a579c478fe5d4f51e1fa71f7db9fd4"
@@ -3053,6 +3044,19 @@ dependencies = [
  "serde",
  "sp-finality-tracker",
  "sp-inherents",
+ "sp-runtime",
+ "sp-std",
+]
+
+[[package]]
+name = "pallet-generic-asset"
+version = "2.0.0-rc4"
+source = "git+https://github.com/paritytech/substrate.git?tag=v2.0.0-rc4#00768a1f21a579c478fe5d4f51e1fa71f7db9fd4"
+dependencies = [
+ "frame-support",
+ "frame-system",
+ "parity-scale-codec",
+ "serde",
  "sp-runtime",
  "sp-std",
 ]

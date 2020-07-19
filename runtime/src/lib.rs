@@ -8,6 +8,8 @@
 #[cfg(feature = "std")]
 include!(concat!(env!("OUT_DIR"), "/wasm_binary.rs"));
 
+use lazy_static::lazy_static;
+
 use grandpa::fg_primitives;
 use grandpa::{AuthorityId as GrandpaId, AuthorityList as GrandpaAuthorityList};
 use sp_api::impl_runtime_apis;
@@ -28,11 +30,11 @@ use sp_version::RuntimeVersion;
 
 // A few exports that help ease life for downstream crates.
 pub use balances::Call as BalancesCall;
-pub use assets::Call as AssetsCall;
+pub use generic_asset::Call as GenericAssetCall;
 
 pub use frame_support::{
     construct_runtime, parameter_types,
-    traits::{KeyOwnerProofSystem, Randomness},
+    traits::{Get, KeyOwnerProofSystem, Randomness},
     weights::{
         constants::{BlockExecutionWeight, ExtrinsicBaseWeight, RocksDbWeight, WEIGHT_PER_SECOND},
         IdentityFee, Weight,
@@ -261,14 +263,36 @@ impl sudo::Trait for Runtime {
     type Call = Call;
 }
 
-impl assets::Trait for Runtime {
+impl generic_asset::Trait for Runtime {
     type Event = Event;
     type Balance = Balance;
     type AssetId = AssetId;
 }
 
+lazy_static! {
+    static ref DEX_ACCOUNT_ID: AccountId = AccountId::default();
+}
+
+pub struct DEXAccountId;
+impl Get<AccountId> for DEXAccountId {
+    fn get() -> AccountId {
+        DEX_ACCOUNT_ID.clone()
+    }
+}
+
+parameter_types! {
+    pub const KSMAssetId: AssetId = 0;
+}
+
+parameter_types! {
+    pub const InitialShares: Balance = 1000;
+}
+
 impl dex_pallet::Trait for Runtime {
     type Event = Event;
+    type DEXAccountId = DEXAccountId;
+    type KSMAssetId = KSMAssetId;
+    type InitialShares = InitialShares;
 }
 
 construct_runtime!(
@@ -283,10 +307,10 @@ construct_runtime!(
         Aura: aura::{Module, Config<T>, Inherent(Timestamp)},
         Grandpa: grandpa::{Module, Call, Storage, Config, Event},
         Balances: balances::{Module, Call, Storage, Config<T>, Event<T>},
-        Assets: assets::{Module, Call, Storage, Event<T>},
+        GenericAsset: generic_asset::{Module, Call, Storage, Event<T>},
         TransactionPayment: transaction_payment::{Module, Storage},
         Sudo: sudo::{Module, Call, Config<T>, Storage, Event<T>},
-        
+
         DexPallet: dex_pallet::{Module, Call, Storage, Event<T>},
     }
 );
