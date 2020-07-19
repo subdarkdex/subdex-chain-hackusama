@@ -1,9 +1,12 @@
 #![cfg_attr(not(feature = "std"), no_std)]
 
-use codec::{Decode, Encode};
-use frame_support::{decl_error, decl_event, decl_module, decl_storage, dispatch, ensure};
+use codec::{Codec, Decode, Encode};
+use frame_support::{
+    decl_error, decl_event, decl_module, decl_storage, dispatch, ensure, traits::Get, Parameter,
+};
 use frame_system::{self as system, ensure_signed};
-use sp_std::{collections::btree_map::BTreeMap, prelude::*};
+use sp_runtime::traits::{AtLeast32BitUnsigned, MaybeSerializeDeserialize, Member, Zero};
+use sp_std::{collections::btree_map::BTreeMap, fmt::Debug, prelude::*};
 
 #[cfg(test)]
 mod mock;
@@ -14,36 +17,74 @@ mod tests;
 #[cfg(feature = "std")]
 pub use serde::{Deserialize, Serialize};
 
-type TShares = u128;
-type TAmount = u128;
+pub trait Trait: system::Trait + assets::Trait + balances::Trait {
+    type Event: From<Event<Self>>
+        + Into<<Self as system::Trait>::Event>
+        + Into<<Self as assets::Trait>::Event>
+        + Into<<Self as balances::Trait>::Event>;
 
-const KSM_ACCOUNT_ID: TAmount = 0;
+    type DEXAccountId: Get<<Self as system::Trait>::AccountId>;
 
-const INITIAL_SHARES: u128 = 1000;
+    type InitialShares: Get<Self::Shares>;
+
+    type DexBalance: From<<Self as balances::Trait>::Balance>
+        + From<<Self as assets::Trait>::Balance>
+        + Into<<Self as balances::Trait>::Balance>
+        + Into<<Self as assets::Trait>::Balance>
+        + Parameter
+        + Member
+        + AtLeast32BitUnsigned
+        + Codec
+        + Default
+        + Copy
+        + MaybeSerializeDeserialize
+        + Debug
+        + Zero;
+
+    type FeeRate: From<Self::DexBalance>
+        + Into<Self::DexBalance>
+        + Parameter
+        + Member
+        + AtLeast32BitUnsigned
+        + Codec
+        + Default
+        + Copy
+        + MaybeSerializeDeserialize
+        + Debug
+        + Zero;
+
+    type Shares: From<Self::DexBalance>
+        + Into<Self::DexBalance>
+        + Parameter
+        + Member
+        + AtLeast32BitUnsigned
+        + Codec
+        + Default
+        + Copy
+        + MaybeSerializeDeserialize
+        + Debug
+        + Zero;
+}
 
 #[cfg_attr(feature = "std", derive(Serialize, Deserialize))]
 #[derive(Encode, Decode, Clone, PartialEq, Eq, Debug)]
 pub struct TokensPair<T: Trait> {
-    fee_rate: u128,
-    ksm_pool: TAmount,
-    token_pool: TAmount,
-    invariant: TAmount,
-    total_shares: TShares,
-    shares: BTreeMap<T::AccountId, TShares>,
-}
-
-pub trait Trait: system::Trait + assets::Trait + balances::Trait {
-    type Event: From<Event<Self>> + Into<<Self as system::Trait>::Event> + Into<<Self as assets::Trait>::Event> + Into<<Self as balances::Trait>::Event>;
+    fee_rate: T::FeeRate,
+    ksm_pool: T::DexBalance,
+    token_pool: T::DexBalance,
+    invariant: T::DexBalance,
+    total_shares: T::Shares,
+    shares: BTreeMap<T::AccountId, T::Shares>,
 }
 
 impl<T: Trait> Default for TokensPair<T> {
     fn default() -> Self {
         Self {
-            fee_rate: 0,
-            ksm_pool: 0,
-            token_pool: 0,
-            invariant: 0,
-            total_shares: 0,
+            fee_rate: T::FeeRate::default(),
+            ksm_pool: T::DexBalance::default(),
+            token_pool: T::DexBalance::default(),
+            invariant: T::DexBalance::default(),
+            total_shares: T::Shares::default(),
             shares: BTreeMap::new(),
         }
     }
@@ -51,24 +92,27 @@ impl<T: Trait> Default for TokensPair<T> {
 
 impl<T: Trait> TokensPair<T> {
     pub fn initialize_new(
-        ksm_amount: TAmount,
-        token_amount: TAmount,
+        ksm_amount: T::DexBalance,
+        token_amount: T::DexBalance,
         sender: T::AccountId,
     ) -> Self {
         let mut shares_map = BTreeMap::new();
-        shares_map.insert(sender.clone(), INITIAL_SHARES);
+        shares_map.insert(sender, T::InitialShares::get());
         Self {
-            fee_rate: 333,
+            fee_rate: T::FeeRate::default(),
             ksm_pool: ksm_amount,
             token_pool: token_amount,
             invariant: ksm_amount * token_amount,
-            total_shares: INITIAL_SHARES,
+            total_shares: T::InitialShares::get(),
             shares: shares_map,
         }
     }
 
-    pub fn calculate_ksm_to_token_swap(&self, ksm_amount: TAmount) -> (TAmount, TAmount, TAmount) {
-        let fee = ksm_amount / self.fee_rate;
+    pub fn calculate_ksm_to_token_swap(
+        &self,
+        ksm_amount: T::DexBalance,
+    ) -> (T::DexBalance, T::DexBalance, T::DexBalance) {
+        let fee = ksm_amount / self.fee_rate.into();
         let new_ksm_pool = self.ksm_pool + ksm_amount;
         let temp_ksm_pool = new_ksm_pool - fee;
         let new_token_pool = self.invariant / temp_ksm_pool;
@@ -78,9 +122,9 @@ impl<T: Trait> TokensPair<T> {
 
     pub fn calculate_token_to_ksm_swap(
         &self,
-        token_amount: TAmount,
-    ) -> (TAmount, TAmount, TAmount) {
-        let fee = token_amount / self.fee_rate;
+        token_amount: T::DexBalance,
+    ) -> (T::DexBalance, T::DexBalance, T::DexBalance) {
+        let fee = token_amount / self.fee_rate.into();
         let new_token_pool = self.token_pool + token_amount;
         let temp_token_pool = new_token_pool - fee;
         let new_ksm_pool = self.invariant / temp_token_pool;
@@ -88,23 +132,23 @@ impl<T: Trait> TokensPair<T> {
         (new_ksm_pool, new_token_pool, ksm_out)
     }
 
-    pub fn calculate_share_price(&self, shares: TShares) -> (TAmount, TAmount) {
-        let ksm_per_share = self.ksm_pool / self.total_shares;
-        let ksm_cost = ksm_per_share * shares;
-        let tokens_per_share = self.token_pool / self.total_shares;
-        let tokens_cost = tokens_per_share * shares;
+    pub fn calculate_share_price(&self, shares: T::Shares) -> (T::DexBalance, T::DexBalance) {
+        let ksm_per_share = self.ksm_pool / self.total_shares.into();
+        let ksm_cost = ksm_per_share * shares.into();
+        let tokens_per_share = self.token_pool / self.total_shares.into();
+        let tokens_cost = tokens_per_share * shares.into();
         (ksm_cost, tokens_cost)
     }
 
     pub fn invest(
         &mut self,
-        ksm_amount: TAmount,
-        token_amount: TAmount,
-        shares: TShares,
+        ksm_amount: T::DexBalance,
+        token_amount: T::DexBalance,
+        shares: T::Shares,
         sender: T::AccountId,
     ) {
         let updated_shares = if let Some(prev_shares) = self.shares.get(&sender) {
-            prev_shares + shares
+            *prev_shares + shares
         } else {
             shares
         };
@@ -117,9 +161,9 @@ impl<T: Trait> TokensPair<T> {
 
     pub fn divest(
         &mut self,
-        ksm_amount: TAmount,
-        token_amount: TAmount,
-        shares: TShares,
+        ksm_amount: T::DexBalance,
+        token_amount: T::DexBalance,
+        shares: T::Shares,
         sender: T::AccountId,
     ) {
         if let Some(share) = self.shares.get_mut(&sender) {
@@ -129,14 +173,14 @@ impl<T: Trait> TokensPair<T> {
         self.total_shares -= shares;
         self.ksm_pool -= ksm_amount;
         self.token_pool -= token_amount;
-        if self.total_shares == 0 {
-            self.invariant = 0;
+        if self.total_shares == T::Shares::zero() {
+            self.invariant = T::DexBalance::zero();
         } else {
             self.invariant = self.ksm_pool * self.token_pool;
         }
     }
 
-    pub fn update_pools(&mut self, ksm_pool: TAmount, token_pool: TAmount) {
+    pub fn update_pools(&mut self, ksm_pool: T::DexBalance, token_pool: T::DexBalance) {
         self.ksm_pool = ksm_pool;
         self.token_pool = token_pool;
         self.invariant = self.ksm_pool * self.token_pool;
@@ -144,20 +188,29 @@ impl<T: Trait> TokensPair<T> {
 
     pub fn ensure_launch(
         &self,
-        ksm_amount: TAmount,
-        token_amount: TAmount,
+        ksm_amount: T::DexBalance,
+        token_amount: T::DexBalance,
     ) -> dispatch::DispatchResult {
-        ensure!(self.invariant == 0, Error::<T>::InvariantNotNull);
-        ensure!(self.total_shares == 0, Error::<T>::TotalSharesNotNull);
-        ensure!(ksm_amount > 0, Error::<T>::LowKsmAmount);
-        ensure!(token_amount > 0, Error::<T>::LowTokenAmount);
+        ensure!(
+            self.invariant == T::DexBalance::zero(),
+            Error::<T>::InvariantNotNull
+        );
+        ensure!(
+            self.total_shares == T::Shares::zero(),
+            Error::<T>::TotalSharesNotNull
+        );
+        ensure!(ksm_amount > T::DexBalance::zero(), Error::<T>::LowKsmAmount);
+        ensure!(
+            token_amount > T::DexBalance::zero(),
+            Error::<T>::LowTokenAmount
+        );
         Ok(())
     }
 
     pub fn ensure_tokens_out(
         &self,
-        tokens_out: TAmount,
-        min_tokens_received: TAmount,
+        tokens_out: T::DexBalance,
+        min_tokens_received: T::DexBalance,
     ) -> dispatch::DispatchResult {
         ensure!(tokens_out >= min_tokens_received, Error::<T>::LowAmountOut);
         ensure!(tokens_out <= self.token_pool, Error::<T>::InsufficientPool);
@@ -167,9 +220,9 @@ impl<T: Trait> TokensPair<T> {
     pub fn ensure_burned_shares(
         &self,
         sender: T::AccountId,
-        shares_burned: TShares,
+        shares_burned: T::Shares,
     ) -> dispatch::DispatchResult {
-        ensure!(shares_burned > 0, Error::<T>::LowShares);
+        ensure!(shares_burned > T::Shares::zero(), Error::<T>::LowShares);
         if let Some(shares) = self.shares.get(&sender) {
             ensure!(*shares >= shares_burned, Error::<T>::InsufficientShares);
             Ok(())
@@ -180,8 +233,8 @@ impl<T: Trait> TokensPair<T> {
 
     pub fn ensure_ksm_out(
         &self,
-        ksm_out: TAmount,
-        min_ksm_received: TAmount,
+        ksm_out: T::DexBalance,
+        min_ksm_received: T::DexBalance,
     ) -> dispatch::DispatchResult {
         ensure!(ksm_out >= min_ksm_received, Error::<T>::LowAmountOut);
         ensure!(ksm_out <= self.ksm_pool, Error::<T>::InsufficientPool);
@@ -199,11 +252,13 @@ decl_event!(
     where
         AccountId = <T as system::Trait>::AccountId,
         AssetId = <T as assets::Trait>::AssetId,
+        Shares = <T as Trait>::Shares,
+        Balance = <T as Trait>::DexBalance,
     {
-        Exchanged(AssetId, AssetId, TAmount, AccountId),
-        Invested(AccountId, TShares),
-        Divested(AccountId, TShares),
-        Withdrawn(AssetId, TAmount, AccountId),
+        Exchanged(AssetId, AssetId, Balance, AccountId),
+        Invested(AccountId, Shares),
+        Divested(AccountId, Shares),
+        Withdrawn(AssetId, Balance, AccountId),
     }
 );
 
@@ -235,10 +290,10 @@ impl<T: Trait> Module<T> {
         Ok(())
     }
     pub fn ensure_divest_expectations(
-        ksm_cost: TAmount,
-        tokens_cost: TAmount,
-        min_ksm_received: TAmount,
-        min_token_received: TAmount,
+        ksm_cost: T::DexBalance,
+        tokens_cost: T::DexBalance,
+        min_ksm_received: T::DexBalance,
+        min_token_received: T::DexBalance,
     ) -> dispatch::DispatchResult {
         ensure!(ksm_cost >= min_ksm_received, Error::<T>::LowAmountOut);
         ensure!(tokens_cost >= min_token_received, Error::<T>::LowAmountOut);
@@ -262,7 +317,7 @@ decl_module! {
         fn deposit_event() = default;
 
         #[weight = 10_000]
-        pub fn initialize_exchange(origin, token: T::AssetId, ksm_amount : TAmount,  token_amount: TAmount) -> dispatch::DispatchResult {
+        pub fn initialize_exchange(origin, token: T::AssetId, ksm_amount: T::DexBalance,  token_amount: T::DexBalance) -> dispatch::DispatchResult {
             let sender = ensure_signed(origin.clone())?;
             if PairStructs::<T>::contains_key(token) {
                 let pair = Self::pair_structs(token);
@@ -272,15 +327,18 @@ decl_module! {
             let pair = TokensPair::<T>::initialize_new(ksm_amount, token_amount, sender.clone());
             PairStructs::<T>::insert(token, pair);
 
+            // <balances::Module<T>>::transfer(origin, T::DEXAccountId::get().into(), ksm_amount.into());
+            // <assets::Module<T>>::transfer(origin, token, T::DEXAccountId::get().into(), token_amount.into());
+
             // transfer `ksm_amount` to our address
             // transfer `token_amount` to our address
 
-            Self::deposit_event(RawEvent::Invested(sender, INITIAL_SHARES));
+            Self::deposit_event(RawEvent::Invested(sender, T::InitialShares::get()));
             Ok(())
         }
 
         #[weight = 10_000]
-        pub fn ksm_to_token_swap(origin, token: T::AssetId, ksm_amount : TAmount,  min_tokens_received: TAmount, receiver : T::AccountId) -> dispatch::DispatchResult {
+        pub fn ksm_to_token_swap(origin, token: T::AssetId, ksm_amount: T::DexBalance,  min_tokens_received: T::DexBalance, receiver : T::AccountId) -> dispatch::DispatchResult {
             let sender = ensure_signed(origin)?;
             let pair = Self::ensure_pair_exists(token)?;
 
@@ -300,7 +358,7 @@ decl_module! {
         }
 
         #[weight = 10_000]
-        pub fn token_to_ksm_swap(origin, token: T::AssetId, token_amount: TAmount, min_ksm_received : TAmount, receiver : T::AccountId) -> dispatch::DispatchResult {
+        pub fn token_to_ksm_swap(origin, token: T::AssetId, token_amount: T::DexBalance, min_ksm_received : T::DexBalance, receiver : T::AccountId) -> dispatch::DispatchResult {
             let sender = ensure_signed(origin)?;
             let pair = Self::ensure_pair_exists(token)?;
 
@@ -319,7 +377,7 @@ decl_module! {
         }
 
         #[weight = 10_000]
-        pub fn token_to_token_swap(origin, token_from: T::AssetId, token_to: T::AssetId, token_amount: TAmount, min_tokens_received : TAmount, receiver : T::AccountId) -> dispatch::DispatchResult {
+        pub fn token_to_token_swap(origin, token_from: T::AssetId, token_to: T::AssetId, token_amount: T::DexBalance, min_tokens_received : T::DexBalance, receiver : T::AccountId) -> dispatch::DispatchResult {
             let sender = ensure_signed(origin)?;
 
             Self::ensure_tokens_exchange(token_from,token_to)?;
@@ -327,7 +385,7 @@ decl_module! {
             let pair_to = Self::ensure_pair_exists(token_to)?;
 
             let (new_ksm_pool_from, new_token_pool_from, ksm_out) = pair_from.calculate_token_to_ksm_swap(token_amount);
-            pair_from.ensure_ksm_out(ksm_out, 0)?;
+            pair_from.ensure_ksm_out(ksm_out, T::DexBalance::zero())?;
 
             let (new_ksm_pool_to, new_token_pool_to, tokens_out) = pair_to.calculate_ksm_to_token_swap(ksm_out);
             pair_to.ensure_tokens_out(tokens_out, min_tokens_received)?;
@@ -351,7 +409,7 @@ decl_module! {
         }
 
         #[weight = 10_000]
-        pub fn invest_liquidity(origin, token: T::AssetId, shares: TShares) -> dispatch::DispatchResult {
+        pub fn invest_liquidity(origin, token: T::AssetId, shares: T::Shares) -> dispatch::DispatchResult {
             let sender = ensure_signed(origin)?;
             Self::ensure_pair_exists(token)?;
 
@@ -372,7 +430,7 @@ decl_module! {
         }
 
         #[weight = 10_000]
-        pub fn divest_liquidity(origin, token: T::AssetId, shares_burned: TShares, min_ksm_received : TAmount, min_token_received : TAmount) -> dispatch::DispatchResult {
+        pub fn divest_liquidity(origin, token: T::AssetId, shares_burned:  T::Shares, min_ksm_received : T::DexBalance, min_token_received : T::DexBalance) -> dispatch::DispatchResult {
             let sender = ensure_signed(origin)?;
             let pair = Self::ensure_pair_exists(token)?;
 
