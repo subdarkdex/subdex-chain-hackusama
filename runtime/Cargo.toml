@@ -3,7 +3,6 @@ default = ['std']
 std = [
     'dex-pallet/std',
     'aura/std',
-    'balances/std',
     'generic-asset/std',
     'codec/std',
     'frame-executive/std',
@@ -32,13 +31,6 @@ std = [
 default-features = false
 git = 'https://github.com/paritytech/substrate.git'
 package = 'pallet-aura'
-tag = 'v2.0.0-rc4'
-version = '2.0.0-rc4'
-
-[dependencies.balances]
-default-features = false
-git = 'https://github.com/paritytech/substrate.git'
-package = 'pallet-balances'
 tag = 'v2.0.0-rc4'
 version = '2.0.0-rc4'
 
