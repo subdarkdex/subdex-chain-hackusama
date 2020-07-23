@@ -240,7 +240,7 @@ parameter_types! {
 }
 
 impl transaction_payment::Trait for Runtime {
-    type Currency = generic_asset::StakingAssetCurrency<Runtime>;
+    type Currency = generic_asset::SpendingAssetCurrency<Runtime>;
     type OnTransactionPayment = ();
     type TransactionByteFee = TransactionByteFee;
     type WeightToFee = IdentityFee<Balance>;
