@@ -29,7 +29,6 @@ use sp_version::NativeVersion;
 use sp_version::RuntimeVersion;
 
 // A few exports that help ease life for downstream crates.
-pub use balances::Call as BalancesCall;
 pub use generic_asset::Call as GenericAssetCall;
 
 pub use frame_support::{
@@ -197,7 +196,7 @@ impl system::Trait for Runtime {
     /// What to do if an account is fully reaped from the system.
     type OnKilledAccount = ();
     /// The data to be stored in an account.
-    type AccountData = balances::AccountData<Balance>;
+    type AccountData = ();
 }
 
 impl aura::Trait for Runtime {
@@ -236,22 +235,12 @@ parameter_types! {
     pub const ExistentialDeposit: u128 = 500;
 }
 
-impl balances::Trait for Runtime {
-    /// The type for recording an account's balance.
-    type Balance = Balance;
-    /// The ubiquitous event type.
-    type Event = Event;
-    type DustRemoval = ();
-    type ExistentialDeposit = ExistentialDeposit;
-    type AccountStore = System;
-}
-
 parameter_types! {
     pub const TransactionByteFee: Balance = 1;
 }
 
 impl transaction_payment::Trait for Runtime {
-    type Currency = balances::Module<Runtime>;
+    type Currency = generic_asset::SpendingAssetCurrency<Runtime>;
     type OnTransactionPayment = ();
     type TransactionByteFee = TransactionByteFee;
     type WeightToFee = IdentityFee<Balance>;
@@ -306,7 +295,7 @@ construct_runtime!(
         Timestamp: timestamp::{Module, Call, Storage, Inherent},
         Aura: aura::{Module, Config<T>, Inherent(Timestamp)},
         Grandpa: grandpa::{Module, Call, Storage, Config, Event},
-        Balances: balances::{Module, Call, Storage, Config<T>, Event<T>},
+        // Balances: balances::{Module, Call, Storage, Config<T>, Event<T>},
         GenericAsset: generic_asset::{Module, Call, Storage, Event<T>},
         TransactionPayment: transaction_payment::{Module, Storage},
         Sudo: sudo::{Module, Call, Config<T>, Storage, Event<T>},

@@ -2,9 +2,7 @@
 
 use codec::{Codec, Decode, Encode};
 use frame_support::{
-    decl_error, decl_event, decl_module, decl_storage, dispatch, ensure,
-    traits::{Currency, ExistenceRequirement, Get},
-    Parameter,
+    decl_error, decl_event, decl_module, decl_storage, dispatch, ensure, traits::Get, Parameter,
 };
 use frame_system::{self as system, ensure_signed};
 use sp_runtime::traits::{AtLeast32BitUnsigned, MaybeSerializeDeserialize, Member, Zero};

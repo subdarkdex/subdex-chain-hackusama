@@ -1,6 +1,6 @@
 use node_template_runtime::{
-    AccountId, AuraConfig, BalancesConfig, GenesisConfig, GrandpaConfig, Signature, SudoConfig,
-    SystemConfig, WASM_BINARY,
+    AccountId, AuraConfig, GenesisConfig, GrandpaConfig, Signature, SudoConfig, SystemConfig,
+    WASM_BINARY,
 };
 use sc_service::ChainType;
 use sp_consensus_aura::sr25519::AuthorityId as AuraId;
@@ -109,13 +109,6 @@ fn testnet_genesis(
         system: Some(SystemConfig {
             code: WASM_BINARY.to_vec(),
             changes_trie_config: Default::default(),
-        }),
-        balances: Some(BalancesConfig {
-            balances: endowed_accounts
-                .iter()
-                .cloned()
-                .map(|k| (k, 1 << 60))
-                .collect(),
         }),
         aura: Some(AuraConfig {
             authorities: initial_authorities.iter().map(|x| (x.0.clone())).collect(),
