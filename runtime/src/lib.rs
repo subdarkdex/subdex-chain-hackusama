@@ -197,6 +197,8 @@ impl system::Trait for Runtime {
     type OnKilledAccount = ();
     /// The data to be stored in an account.
     type AccountData = ();
+    /// Weight information for the extrinsics of this pallet.
+    type SystemWeightInfo = ();
 }
 
 impl aura::Trait for Runtime {
@@ -229,6 +231,7 @@ impl timestamp::Trait for Runtime {
     type Moment = u64;
     type OnTimestampSet = Aura;
     type MinimumPeriod = MinimumPeriod;
+    type WeightInfo = ();
 }
 
 parameter_types! {
@@ -293,9 +296,8 @@ construct_runtime!(
         System: system::{Module, Call, Config, Storage, Event<T>},
         RandomnessCollectiveFlip: randomness_collective_flip::{Module, Call, Storage},
         Timestamp: timestamp::{Module, Call, Storage, Inherent},
-        Aura: aura::{Module, Config<T>, Inherent(Timestamp)},
+        Aura: aura::{Module, Config<T>, Inherent},
         Grandpa: grandpa::{Module, Call, Storage, Config, Event},
-        // Balances: balances::{Module, Call, Storage, Config<T>, Event<T>},
         GenericAsset: generic_asset::{Module, Call, Storage, Event<T>},
         TransactionPayment: transaction_payment::{Module, Storage},
         Sudo: sudo::{Module, Call, Config<T>, Storage, Event<T>},
@@ -420,7 +422,7 @@ impl_runtime_apis! {
             Grandpa::grandpa_authorities()
         }
 
-        fn submit_report_equivocation_extrinsic(
+        fn submit_report_equivocation_unsigned_extrinsic(
             _equivocation_proof: fg_primitives::EquivocationProof<
                 <Block as BlockT>::Hash,
                 NumberFor<Block>,

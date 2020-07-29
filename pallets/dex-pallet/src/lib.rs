@@ -1,11 +1,11 @@
 #![cfg_attr(not(feature = "std"), no_std)]
 
-use codec::{Codec, Decode, Encode};
+use codec::{Decode, Encode};
 use frame_support::{
-    decl_error, decl_event, decl_module, decl_storage, dispatch, ensure, traits::Get, Parameter,
+    decl_error, decl_event, decl_module, decl_storage, dispatch, ensure, traits::Get,
 };
 use frame_system::{self as system, ensure_signed};
-use sp_runtime::traits::{AtLeast32BitUnsigned, MaybeSerializeDeserialize, Member, Zero};
+use sp_runtime::traits::Zero;
 use sp_std::{collections::btree_map::BTreeMap, fmt::Debug, prelude::*};
 
 #[cfg(test)]
@@ -168,14 +168,6 @@ impl<T: Trait> TokensPair<T> {
             self.total_shares == BalanceOf::<T>::zero(),
             Error::<T>::TotalSharesNotNull
         );
-        ensure!(
-            ksm_amount > BalanceOf::<T>::zero(),
-            Error::<T>::LowKsmAmount
-        );
-        ensure!(
-            token_amount > BalanceOf::<T>::zero(),
-            Error::<T>::LowTokenAmount
-        );
         Ok(())
     }
 
@@ -294,9 +286,18 @@ decl_module! {
         #[weight = 10_000]
         pub fn initialize_exchange(origin, token: T::AssetId, ksm_amount: BalanceOf<T>,  token_amount: BalanceOf<T>) -> dispatch::DispatchResult {
             let sender = ensure_signed(origin.clone())?;
+
+            ensure!(
+                ksm_amount > BalanceOf::<T>::zero(),
+                Error::<T>::LowKsmAmount
+            );
+            ensure!(
+                token_amount > BalanceOf::<T>::zero(),
+                Error::<T>::LowTokenAmount
+            );
+
             if PairStructs::<T>::contains_key(token) {
-                let pair = Self::pair_structs(token);
-                pair.ensure_launch(ksm_amount.into(), token_amount)?;
+                Self::pair_structs(token).ensure_launch(ksm_amount.into(), token_amount)?;
             }
 
             let pair = TokensPair::<T>::initialize_new(ksm_amount.into(), token_amount, sender.clone());
