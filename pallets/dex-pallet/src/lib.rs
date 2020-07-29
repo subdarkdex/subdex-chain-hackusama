@@ -168,14 +168,6 @@ impl<T: Trait> TokensPair<T> {
             self.total_shares == BalanceOf::<T>::zero(),
             Error::<T>::TotalSharesNotNull
         );
-        ensure!(
-            ksm_amount > BalanceOf::<T>::zero(),
-            Error::<T>::LowKsmAmount
-        );
-        ensure!(
-            token_amount > BalanceOf::<T>::zero(),
-            Error::<T>::LowTokenAmount
-        );
         Ok(())
     }
 
@@ -294,9 +286,18 @@ decl_module! {
         #[weight = 10_000]
         pub fn initialize_exchange(origin, token: T::AssetId, ksm_amount: BalanceOf<T>,  token_amount: BalanceOf<T>) -> dispatch::DispatchResult {
             let sender = ensure_signed(origin.clone())?;
+
+            ensure!(
+                ksm_amount > BalanceOf::<T>::zero(),
+                Error::<T>::LowKsmAmount
+            );
+            ensure!(
+                token_amount > BalanceOf::<T>::zero(),
+                Error::<T>::LowTokenAmount
+            );
+
             if PairStructs::<T>::contains_key(token) {
-                let pair = Self::pair_structs(token);
-                pair.ensure_launch(ksm_amount.into(), token_amount)?;
+                Self::pair_structs(token).ensure_launch(ksm_amount.into(), token_amount)?;
             }
 
             let pair = TokensPair::<T>::initialize_new(ksm_amount.into(), token_amount, sender.clone());

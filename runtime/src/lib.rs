@@ -198,12 +198,11 @@ impl system::Trait for Runtime {
     /// The data to be stored in an account.
     type AccountData = ();
     /// Weight information for the extrinsics of this pallet.
-	type SystemWeightInfo = ();
+    type SystemWeightInfo = ();
 }
 
 impl aura::Trait for Runtime {
     type AuthorityId = AuraId;
-
 }
 
 impl grandpa::Trait for Runtime {
