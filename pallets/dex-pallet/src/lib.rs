@@ -319,7 +319,14 @@ decl_module! {
         }
 
         #[weight = 10_000]
-        pub fn ksm_to_token_swap(origin, token: T::AssetId, ksm_amount: BalanceOf<T>,  min_tokens_received: BalanceOf<T>, receiver : T::AccountId) -> dispatch::DispatchResult {
+        pub fn swap(origin, token_from: T::AssetId, token_to: T::AssetId, token_from_amount: BalanceOf<T>,  min_tokens_received: BalanceOf<T>, receiver : T::AccountId) -> dispatch::DispatchResult {
+            if (token_from == T::KSMAssetId::get()) {
+                return ksm_to_token_swap(origin, token_to, token_from_amount,  min_tokens_received, receiver);
+            }
+            token_to_ksm_swap(origin, token_from, token_from_amount,  min_tokens_received, receiver)
+        }
+
+         fn ksm_to_token_swap(origin, token: T::AssetId, ksm_amount: BalanceOf<T>,  min_tokens_received: BalanceOf<T>, receiver : T::AccountId) -> dispath::DcispatchResult {
             let sender = ensure_signed(origin)?;
             let pair = Self::ensure_pair_exists(token)?;
 
@@ -345,8 +352,7 @@ decl_module! {
             Ok(())
         }
 
-        #[weight = 10_000]
-        pub fn token_to_ksm_swap(origin, token: T::AssetId, token_amount: BalanceOf<T>, min_ksm_received : BalanceOf<T>, receiver : T::AccountId) -> dispatch::DispatchResult {
+         fn token_to_ksm_swap(origin, token: T::AssetId, token_amount: BalanceOf<T>, min_ksm_received : BalanceOf<T>, receiver : T::AccountId) -> dispatch::DispatchResult {
             let sender = ensure_signed(origin)?;
             let pair = Self::ensure_pair_exists(token)?;
 
