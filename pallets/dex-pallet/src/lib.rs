@@ -161,6 +161,14 @@ impl<T: Trait> TokensPair<T> {
         token_amount: BalanceOf<T>,
     ) -> dispatch::DispatchResult {
         ensure!(
+            ksm_amount > BalanceOf::<T>::zero(),
+            Error::<T>::LowKsmAmount
+        );
+        ensure!(
+            token_amount > BalanceOf::<T>::zero(),
+            Error::<T>::LowTokenAmount
+        );
+        ensure!(
             self.invariant == BalanceOf::<T>::zero(),
             Error::<T>::InvariantNotNull
         );
@@ -286,16 +294,7 @@ decl_module! {
         #[weight = 10_000]
         pub fn initialize_exchange(origin, token: T::AssetId, ksm_amount: BalanceOf<T>,  token_amount: BalanceOf<T>) -> dispatch::DispatchResult {
             let sender = ensure_signed(origin.clone())?;
-
-            ensure!(
-                ksm_amount > BalanceOf::<T>::zero(),
-                Error::<T>::LowKsmAmount
-            );
-            ensure!(
-                token_amount > BalanceOf::<T>::zero(),
-                Error::<T>::LowTokenAmount
-            );
-
+            
             if PairStructs::<T>::contains_key(token) {
                 Self::pair_structs(token).ensure_launch(ksm_amount.into(), token_amount)?;
             }
