@@ -37,7 +37,7 @@ pub trait Trait: system::Trait + generic_asset::Trait {
 
 #[cfg_attr(feature = "std", derive(Serialize, Deserialize))]
 #[derive(Encode, Decode, Clone, PartialEq, Eq, Debug)]
-pub struct TokensPair<T: Trait> {
+pub struct Market<T: Trait> {
     fee_rate: BalanceOf<T>,
     ksm_pool: BalanceOf<T>,
     token_pool: BalanceOf<T>,
@@ -46,7 +46,7 @@ pub struct TokensPair<T: Trait> {
     shares: BTreeMap<T::AccountId, BalanceOf<T>>,
 }
 
-impl<T: Trait> Default for TokensPair<T> {
+impl<T: Trait> Default for Market<T> {
     fn default() -> Self {
         Self {
             fee_rate: BalanceOf::<T>::default(),
@@ -59,7 +59,7 @@ impl<T: Trait> Default for TokensPair<T> {
     }
 }
 
-impl<T: Trait> TokensPair<T> {
+impl<T: Trait> Market<T> {
     pub fn initialize_new(
         ksm_amount: BalanceOf<T>,
         token_amount: BalanceOf<T>,
@@ -218,7 +218,7 @@ impl<T: Trait> TokensPair<T> {
 }
 decl_storage! {
     trait Store for Module<T: Trait> as TemplateModule {
-        pub PairStructs get(fn pair_structs): map hasher(blake2_128_concat) T::AssetId => TokensPair<T>;
+        pub Markets get(fn markets): map hasher(blake2_128_concat) T::AssetId => Market<T>;
     }
 }
 
@@ -274,12 +274,9 @@ impl<T: Trait> Module<T> {
         ensure!(tokens_cost >= min_token_received, Error::<T>::LowAmountOut);
         Ok(())
     }
-    pub fn ensure_pair_exists(token: T::AssetId) -> Result<TokensPair<T>, Error<T>> {
-        ensure!(
-            PairStructs::<T>::contains_key(token),
-            Error::<T>::PairNotExist
-        );
-        Ok(Self::pair_structs(token))
+    pub fn ensure_pair_exists(token: T::AssetId) -> Result<Market<T>, Error<T>> {
+        ensure!(Markets::<T>::contains_key(token), Error::<T>::PairNotExist);
+        Ok(Self::markets(token))
     }
 }
 // The pallet's dispatchable functions.
@@ -294,18 +291,18 @@ decl_module! {
         #[weight = 10_000]
         pub fn initialize_exchange(origin, token: T::AssetId, ksm_amount: BalanceOf<T>,  token_amount: BalanceOf<T>) -> dispatch::DispatchResult {
             let sender = ensure_signed(origin.clone())?;
-            
-            if PairStructs::<T>::contains_key(token) {
-                Self::pair_structs(token).ensure_launch(ksm_amount.into(), token_amount)?;
+
+            if Markets::<T>::contains_key(token) {
+                Self::markets(token).ensure_launch(ksm_amount, token_amount)?;
             }
 
-            let pair = TokensPair::<T>::initialize_new(ksm_amount.into(), token_amount, sender.clone());
+            let pair = Market::<T>::initialize_new(ksm_amount, token_amount, sender.clone());
 
             //
             // == MUTATION SAFE ==
             //
 
-            PairStructs::<T>::insert(token, pair);
+            Markets::<T>::insert(token, pair);
 
             // transfer `ksm_amount` to our address
             <generic_asset::Module<T>>::make_transfer_with_event(&T::KSMAssetId::get(), &sender, &T::DEXAccountId::get(), ksm_amount)?;
@@ -330,7 +327,7 @@ decl_module! {
             // == MUTATION SAFE ==
             //
 
-            <PairStructs<T>>::mutate(token, |pair| {
+            <Markets<T>>::mutate(token, |pair| {
                 pair.update_pools(new_ksm_pool, new_token_pool)
             });
 
@@ -356,7 +353,7 @@ decl_module! {
             // == MUTATION SAFE ==
             //
 
-            <PairStructs<T>>::mutate(token, |pair| {
+            <Markets<T>>::mutate(token, |pair| {
                 pair.update_pools(new_ksm_pool, new_token_pool)
             });
 
@@ -388,10 +385,10 @@ decl_module! {
             // == MUTATION SAFE ==
             //
 
-            <PairStructs<T>>::mutate(token_from, |pair| {
+            <Markets<T>>::mutate(token_from, |pair| {
                 pair.update_pools(new_ksm_pool_from, new_token_pool_from)
             });
-            <PairStructs<T>>::mutate(token_to, |pair| {
+            <Markets<T>>::mutate(token_to, |pair| {
                 pair.update_pools(new_ksm_pool_to, new_token_pool_to)
             });
 
@@ -415,7 +412,7 @@ decl_module! {
             // == MUTATION SAFE ==
             //
 
-            <PairStructs<T>>::mutate(token, |pair| {
+            <Markets<T>>::mutate(token, |pair| {
                 pair.invest(ksm_cost, tokens_cost, shares, sender.clone())
             });
 
@@ -444,7 +441,7 @@ decl_module! {
             // == MUTATION SAFE ==
             //
 
-            <PairStructs<T>>::mutate(token, |pair| {
+            <Markets<T>>::mutate(token, |pair| {
                 pair.divest(ksm_cost, tokens_cost, shares_burned, sender.clone())
             });
 
