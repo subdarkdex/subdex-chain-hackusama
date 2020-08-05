@@ -2,10 +2,11 @@
 
 use codec::{Decode, Encode};
 use frame_support::{
-    decl_error, decl_event, decl_module, decl_storage, dispatch, ensure, traits::Get,
+    decl_error, decl_event, decl_module, decl_storage, dispatch, ensure,
+    traits::{Get, WithdrawReason},
 };
 use frame_system::{self as system, ensure_signed};
-use sp_runtime::traits::Zero;
+use sp_runtime::traits::{CheckedSub, Zero};
 use sp_std::{collections::btree_map::BTreeMap, fmt::Debug, prelude::*};
 
 #[cfg(test)]
@@ -255,7 +256,9 @@ decl_error! {
         InsufficientPool,
         LowShares,
         InsufficientShares,
-        DoesNotOwnShare
+        DoesNotOwnShare,
+        InsufficientKsmBalance,
+        InsufficientOtherAssetBalance
     }
 }
 
@@ -264,7 +267,10 @@ impl<T: Trait> Module<T> {
         token_from: T::AssetId,
         token_to: T::AssetId,
     ) -> dispatch::DispatchResult {
-        //TODO ensure token_from is KSM
+        ensure!(
+            token_from == T::KSMAssetId::get(),
+            Error::<T>::InvalidExchange
+        );
         ensure!(token_from != token_to, Error::<T>::InvalidExchange);
         Ok(())
     }
@@ -282,6 +288,35 @@ impl<T: Trait> Module<T> {
             !Exchanges::<T>::contains_key(token),
             Error::<T>::ExchangeAlreadyExists
         );
+        Ok(())
+    }
+
+    pub fn ensure_sufficient_balances(
+        from: &T::AccountId,
+        ksm_amount: BalanceOf<T>,
+        token_asset_id: &T::AssetId,
+        token_amount: BalanceOf<T>,
+    ) -> dispatch::DispatchResult {
+        let new_ksm_balance = <generic_asset::Module<T>>::free_balance(&T::KSMAssetId::get(), from)
+            .checked_sub(&ksm_amount)
+            .ok_or(Error::<T>::InsufficientKsmBalance)?;
+        <generic_asset::Module<T>>::ensure_can_withdraw(
+            &T::KSMAssetId::get(),
+            from,
+            ksm_amount,
+            WithdrawReason::Transfer.into(),
+            new_ksm_balance,
+        )?;
+        let new_token_balance = <generic_asset::Module<T>>::free_balance(token_asset_id, from)
+            .checked_sub(&token_amount)
+            .ok_or(Error::<T>::InsufficientOtherAssetBalance)?;
+        <generic_asset::Module<T>>::ensure_can_withdraw(
+            &T::KSMAssetId::get(),
+            from,
+            token_amount,
+            WithdrawReason::Transfer.into(),
+            new_token_balance,
+        )?;
         Ok(())
     }
 
@@ -306,25 +341,25 @@ decl_module! {
         fn deposit_event() = default;
 
         #[weight = 10_000]
-        pub fn initialize_exchange(origin, token: T::AssetId, ksm_amount: BalanceOf<T>,  token_amount: BalanceOf<T>) -> dispatch::DispatchResult {
+        pub fn initialize_exchange(origin, ksm_amount: BalanceOf<T>, token: T::AssetId, token_amount: BalanceOf<T>) -> dispatch::DispatchResult {
             let sender = ensure_signed(origin)?;
+
             Self::ensure_exchange_not_exists(token)?;
-
             Self::exchanges(token).ensure_launch(ksm_amount, token_amount)?;
-
-            let exchange = Exchange::<T>::initialize_new(ksm_amount, token_amount, sender.clone());
-
-            //
-            // == MUTATION SAFE ==
-            //
-
-            Exchanges::<T>::insert(token, exchange);
+            Self::ensure_sufficient_balances(&sender, ksm_amount, &token, token_amount)?;
 
             // transfer `ksm_amount` to our address
             <generic_asset::Module<T>>::make_transfer_with_event(&T::KSMAssetId::get(), &sender, &T::DEXAccountId::get(), ksm_amount)?;
 
             // transfer `token_amount` to our address
             <generic_asset::Module<T>>::make_transfer_with_event(&token, &sender, &T::DEXAccountId::get(), token_amount)?;
+
+            //
+            // == MUTATION SAFE ==
+            //
+            let exchange = Exchange::<T>::initialize_new(ksm_amount, token_amount, sender.clone());
+
+            Exchanges::<T>::insert(token, exchange);
 
             Self::deposit_event(RawEvent::Invested(sender, T::InitialShares::get()));
             Ok(())
