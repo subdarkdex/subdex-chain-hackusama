@@ -21,6 +21,8 @@ pub type AssetIdOf<T> = <T as generic_asset::Trait>::AssetId;
 
 type BalanceOf<T> = <T as generic_asset::Trait>::Balance;
 
+pub const FEE_RATE_DENOMINATOR: u32 = 1000;
+
 pub trait Trait: system::Trait + generic_asset::Trait {
     type Event: From<Event<Self>>
         + Into<<Self as system::Trait>::Event>
@@ -33,6 +35,8 @@ pub trait Trait: system::Trait + generic_asset::Trait {
     type KSMAssetId: Get<AssetIdOf<Self>>;
 
     type InitialShares: Get<BalanceOf<Self>>;
+
+    type ExchangeFeeRate: Get<BalanceOf<Self>>;
 }
 
 #[cfg_attr(feature = "std", derive(Serialize, Deserialize))]
@@ -68,7 +72,7 @@ impl<T: Trait> Exchange<T> {
         let mut shares_map = BTreeMap::new();
         shares_map.insert(sender, T::InitialShares::get());
         Self {
-            fee_rate: BalanceOf::<T>::default(),
+            fee_rate: T::ExchangeFeeRate::get(),
             ksm_pool: ksm_amount,
             token_pool: token_amount,
             invariant: ksm_amount * token_amount,
@@ -81,7 +85,7 @@ impl<T: Trait> Exchange<T> {
         &self,
         ksm_amount: BalanceOf<T>,
     ) -> (BalanceOf<T>, BalanceOf<T>, BalanceOf<T>) {
-        let fee = ksm_amount / self.fee_rate;
+        let fee = ksm_amount * self.fee_rate / FEE_RATE_DENOMINATOR.into();
         let new_ksm_pool = self.ksm_pool + ksm_amount;
         let temp_ksm_pool = new_ksm_pool - fee;
         let new_token_pool = self.invariant / temp_ksm_pool;
@@ -93,7 +97,7 @@ impl<T: Trait> Exchange<T> {
         &self,
         token_amount: BalanceOf<T>,
     ) -> (BalanceOf<T>, BalanceOf<T>, BalanceOf<T>) {
-        let fee = token_amount / self.fee_rate;
+        let fee = token_amount * self.fee_rate / FEE_RATE_DENOMINATOR.into();
         let new_token_pool = self.token_pool + token_amount;
         let temp_token_pool = new_token_pool - fee;
         let new_ksm_pool = self.invariant / temp_token_pool;

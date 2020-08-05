@@ -274,10 +274,8 @@ impl Get<AccountId> for DEXAccountId {
 
 parameter_types! {
     pub const KSMAssetId: AssetId = 0;
-}
-
-parameter_types! {
     pub const InitialShares: Balance = 1000;
+    pub const ExchangeFeeRate: Balance = 3; // 3/1000
 }
 
 impl dex_pallet::Trait for Runtime {
@@ -285,6 +283,7 @@ impl dex_pallet::Trait for Runtime {
     type DEXAccountId = DEXAccountId;
     type KSMAssetId = KSMAssetId;
     type InitialShares = InitialShares;
+    type ExchangeFeeRate = ExchangeFeeRate;
 }
 
 construct_runtime!(
