@@ -90,11 +90,11 @@ impl<T: Trait> Exchange<T> {
         let new_ksm_pool = self.ksm_pool + ksm_amount;
         let temp_ksm_pool = new_ksm_pool - fee;
         let new_token_pool = self.invariant / temp_ksm_pool;
-        let tokens_out = self.token_pool - new_token_pool;
-        (new_ksm_pool, new_token_pool, tokens_out)
+        let token_amount = self.token_pool - new_token_pool;
+        (new_ksm_pool, new_token_pool, token_amount)
     }
 
-    pub fn calculate_token_to_ksm_swap(
+    pub fn calculate_to_token_ksm_swap(
         &self,
         token_amount: BalanceOf<T>,
     ) -> (BalanceOf<T>, BalanceOf<T>, BalanceOf<T>) {
@@ -102,16 +102,16 @@ impl<T: Trait> Exchange<T> {
         let new_token_pool = self.token_pool + token_amount;
         let temp_token_pool = new_token_pool - fee;
         let new_ksm_pool = self.invariant / temp_token_pool;
-        let ksm_out = self.ksm_pool - new_ksm_pool;
-        (new_ksm_pool, new_token_pool, ksm_out)
+        let ksm_amount = self.ksm_pool - new_ksm_pool;
+        (new_ksm_pool, new_token_pool, ksm_amount)
     }
 
     pub fn calculate_share_price(&self, shares: BalanceOf<T>) -> (BalanceOf<T>, BalanceOf<T>) {
         let ksm_per_share = self.ksm_pool / self.total_shares;
         let ksm_cost = ksm_per_share * shares;
-        let tokens_per_share = self.token_pool / self.total_shares;
-        let tokens_cost = tokens_per_share * shares;
-        (ksm_cost, tokens_cost)
+        let token_per_share = self.token_pool / self.total_shares;
+        let token_cost = token_per_share * shares;
+        (ksm_cost, token_cost)
     }
 
     pub fn invest(
@@ -184,13 +184,19 @@ impl<T: Trait> Exchange<T> {
         Ok(())
     }
 
-    pub fn ensure_tokens_out(
+    pub fn ensure_token_amount(
         &self,
-        tokens_out: BalanceOf<T>,
-        min_tokens_received: BalanceOf<T>,
+        token_out_amount: BalanceOf<T>,
+        min_token_out_amount: BalanceOf<T>,
     ) -> dispatch::DispatchResult {
-        ensure!(tokens_out >= min_tokens_received, Error::<T>::LowAmountOut);
-        ensure!(tokens_out <= self.token_pool, Error::<T>::InsufficientPool);
+        ensure!(
+            token_out_amount >= min_token_out_amount,
+            Error::<T>::TokenAmountBelowExpectation
+        );
+        ensure!(
+            token_out_amount <= self.token_pool,
+            Error::<T>::InsufficientPool
+        );
         Ok(())
     }
 
@@ -201,7 +207,7 @@ impl<T: Trait> Exchange<T> {
     ) -> dispatch::DispatchResult {
         ensure!(
             shares_burned > BalanceOf::<T>::zero(),
-            Error::<T>::LowShares
+            Error::<T>::InvalidShares
         );
         if let Some(shares) = self.shares.get(&sender) {
             ensure!(*shares >= shares_burned, Error::<T>::InsufficientShares);
@@ -211,16 +217,23 @@ impl<T: Trait> Exchange<T> {
         }
     }
 
-    pub fn ensure_ksm_out(
+    pub fn ensure_ksm_amount(
         &self,
-        ksm_out: BalanceOf<T>,
-        min_ksm_received: BalanceOf<T>,
+        ksm_out_amount: BalanceOf<T>,
+        min_ksm_out_amount: BalanceOf<T>,
     ) -> dispatch::DispatchResult {
-        ensure!(ksm_out >= min_ksm_received, Error::<T>::LowAmountOut);
-        ensure!(ksm_out <= self.ksm_pool, Error::<T>::InsufficientPool);
+        ensure!(
+            ksm_out_amount >= min_ksm_out_amount,
+            Error::<T>::KsmAmountBelowExpectation
+        );
+        ensure!(
+            ksm_out_amount <= self.ksm_pool,
+            Error::<T>::InsufficientPool
+        );
         Ok(())
     }
 }
+
 decl_storage! {
     trait Store for Module<T: Trait> as TemplateModule {
         pub Exchanges get(fn exchanges): map hasher(blake2_128_concat) T::AssetId => Exchange<T>;
@@ -235,7 +248,7 @@ decl_event!(
         Shares = BalanceOf<T>,
         Balance = BalanceOf<T>,
     {
-        Exchanged(AssetId, AssetId, Balance, AccountId),
+        Exchanged(AssetId, Balance, AssetId, Balance, AccountId),
         Invested(AccountId, Shares),
         Divested(AccountId, Shares),
         Withdrawn(AssetId, Balance, AccountId),
@@ -252,9 +265,10 @@ decl_error! {
         TotalSharesNotNull,
         LowKsmAmount,
         LowTokenAmount,
-        LowAmountOut,
+        KsmAmountBelowExpectation,
+        TokenAmountBelowExpectation,
         InsufficientPool,
-        LowShares,
+        InvalidShares,
         InsufficientShares,
         DoesNotOwnShare,
         InsufficientKsmBalance,
@@ -262,16 +276,114 @@ decl_error! {
     }
 }
 
+// The pallet's dispatchable functions.
+decl_module! {
+    /// The module declaration.
+    pub struct Module<T: Trait> for enum Call where origin: T::Origin {
+
+        type Error = Error<T>;
+
+        fn deposit_event() = default;
+
+        #[weight = 10_000]
+        pub fn initialize_exchange(origin, ksm_amount: BalanceOf<T>, token: T::AssetId, token_amount: BalanceOf<T>) -> dispatch::DispatchResult {
+            let sender = ensure_signed(origin)?;
+
+            Self::ensure_exchange_not_exists(token)?;
+            Self::exchanges(token).ensure_launch(ksm_amount, token_amount)?;
+            Self::ensure_sufficient_balances(&sender, &T::KSMAssetId::get(), ksm_amount, &token, token_amount)?;
+
+            //
+            // == MUTATION SAFE ==
+            //
+
+            // transfer KSM to the DEX account
+            <generic_asset::Module<T>>::make_transfer_with_event(&T::KSMAssetId::get(), &sender, &T::DEXAccountId::get(), ksm_amount)?;
+            // transfer token to the DEX account
+            <generic_asset::Module<T>>::make_transfer_with_event(&token, &sender, &T::DEXAccountId::get(), token_amount)?;
+
+            let exchange = Exchange::<T>::initialize_new(ksm_amount, token_amount, sender.clone());
+
+            Exchanges::<T>::insert(token, exchange);
+
+            Self::deposit_event(RawEvent::Invested(sender, T::InitialShares::get()));
+            Ok(())
+        }
+
+        #[weight = 10_000]
+        pub fn swap(origin, token_in: T::AssetId, token_in_amount: BalanceOf<T>, token_out: T::AssetId,  min_token_out_amount : BalanceOf<T>, receiver : T::AccountId) {
+            let sender = ensure_signed(origin)?;
+
+            Self::ensure_valid_exchange(token_in, token_out)?;
+
+            if token_in == T::KSMAssetId::get() {
+                Self::ksm_to_token_swap(sender, token_in_amount, token_out, min_token_out_amount, receiver)?;
+            } else if token_out == T::KSMAssetId::get() {
+                Self::token_to_ksm_swap(sender, token_in, token_in_amount, min_token_out_amount, receiver)?;
+            } else {
+                Self::token_to_token_swap(sender, token_in, token_in_amount, token_out, min_token_out_amount, receiver)?;
+            }
+        }
+
+        #[weight = 10_000]
+        pub fn invest_liquidity(origin, token: T::AssetId, shares: BalanceOf<T>) -> dispatch::DispatchResult {
+            let sender = ensure_signed(origin)?;
+
+            let (ksm_cost, token_cost) = Self::ensure_exchange_exists(token)?.calculate_share_price(shares);
+            Self::ensure_sufficient_balances(&sender, &T::KSMAssetId::get(), ksm_cost, &token, token_cost)?;
+
+            //
+            // == MUTATION SAFE ==
+            //
+
+            // transfer KSM to the DEX account
+            <generic_asset::Module<T>>::make_transfer_with_event(&T::KSMAssetId::get(), &sender, &T::DEXAccountId::get(), ksm_cost)?;
+            // transfer token to the DEX account
+            <generic_asset::Module<T>>::make_transfer_with_event(&token, &sender, &T::DEXAccountId::get(), token_cost)?;
+
+            <Exchanges<T>>::mutate(token, |exchange| {
+                exchange.invest(ksm_cost, token_cost, shares, sender.clone())
+            });
+
+            Self::deposit_event(RawEvent::Invested(sender, shares));
+            Ok(())
+        }
+
+        #[weight = 10_000]
+        pub fn divest_liquidity(origin, token: T::AssetId, shares_burned:  BalanceOf<T>, min_ksm_received : BalanceOf<T>, min_token_received : BalanceOf<T>) -> dispatch::DispatchResult {
+            let sender = ensure_signed(origin)?;
+
+            let exchange = Self::ensure_exchange_exists(token)?;
+            exchange.ensure_burned_shares(sender.clone(), shares_burned)?;
+            let (ksm_cost, token_cost) = exchange.calculate_share_price(shares_burned);
+            Self::ensure_divest_expectations(ksm_cost, token_cost, min_ksm_received, min_token_received)?;
+            Self::ensure_sufficient_balances(&T::DEXAccountId::get(), &T::KSMAssetId::get(), ksm_cost, &token, token_cost)?;
+
+            //
+            // == MUTATION SAFE ==
+            //
+
+            // transfer KSM to sender
+            <generic_asset::Module<T>>::make_transfer_with_event(&T::KSMAssetId::get(), &T::DEXAccountId::get(), &sender, ksm_cost)?;
+            // transfer token to sender
+            <generic_asset::Module<T>>::make_transfer_with_event(&token, &T::DEXAccountId::get(), &sender, token_cost)?;
+
+            <Exchanges<T>>::mutate(token, |exchange| {
+                exchange.divest(ksm_cost, token_cost, shares_burned, sender.clone())
+            });
+
+            Self::deposit_event(RawEvent::Divested(sender, shares_burned));
+            Ok(())
+        }
+    }
+}
+
 impl<T: Trait> Module<T> {
     pub fn ensure_valid_exchange(
-        token_from: T::AssetId,
-        token_to: T::AssetId,
+        token_in: T::AssetId,
+        token_out: T::AssetId,
     ) -> dispatch::DispatchResult {
-        ensure!(
-            token_from == T::KSMAssetId::get(),
-            Error::<T>::InvalidExchange
-        );
-        ensure!(token_from != token_to, Error::<T>::InvalidExchange);
+        ensure!(token_in != token_out, Error::<T>::InvalidExchange);
         Ok(())
     }
 
@@ -292,30 +404,35 @@ impl<T: Trait> Module<T> {
     }
 
     pub fn ensure_sufficient_balances(
-        from: &T::AccountId,
-        ksm_amount: BalanceOf<T>,
-        token_asset_id: &T::AssetId,
-        token_amount: BalanceOf<T>,
+        sender: &T::AccountId,
+        token_in: &T::AssetId,
+        token_in_amount: BalanceOf<T>,
+        token_out: &T::AssetId,
+        token_out_amount: BalanceOf<T>,
     ) -> dispatch::DispatchResult {
-        let new_ksm_balance = <generic_asset::Module<T>>::free_balance(&T::KSMAssetId::get(), from)
-            .checked_sub(&ksm_amount)
-            .ok_or(Error::<T>::InsufficientKsmBalance)?;
+        Self::ensure_sufficient_balance(sender, token_in, token_in_amount)?;
+        Self::ensure_sufficient_balance(sender, token_out, token_out_amount)?;
+        Ok(())
+    }
+
+    pub fn ensure_sufficient_balance(
+        from: &T::AccountId,
+        asset_id: &T::AssetId,
+        amount: BalanceOf<T>,
+    ) -> dispatch::DispatchResult {
+        let mut error = Error::<T>::InsufficientOtherAssetBalance;
+        if &T::KSMAssetId::get() == asset_id {
+            error = Error::<T>::InsufficientKsmBalance;
+        }
+        let new_balance = <generic_asset::Module<T>>::free_balance(asset_id, from)
+            .checked_sub(&amount)
+            .ok_or(error)?;
         <generic_asset::Module<T>>::ensure_can_withdraw(
-            &T::KSMAssetId::get(),
+            asset_id,
             from,
-            ksm_amount,
+            amount,
             WithdrawReason::Transfer.into(),
-            new_ksm_balance,
-        )?;
-        let new_token_balance = <generic_asset::Module<T>>::free_balance(token_asset_id, from)
-            .checked_sub(&token_amount)
-            .ok_or(Error::<T>::InsufficientOtherAssetBalance)?;
-        <generic_asset::Module<T>>::ensure_can_withdraw(
-            &T::KSMAssetId::get(),
-            from,
-            token_amount,
-            WithdrawReason::Transfer.into(),
-            new_token_balance,
+            new_balance,
         )?;
         Ok(())
     }
@@ -326,184 +443,169 @@ impl<T: Trait> Module<T> {
         min_ksm_received: BalanceOf<T>,
         min_token_received: BalanceOf<T>,
     ) -> dispatch::DispatchResult {
-        ensure!(ksm_cost >= min_ksm_received, Error::<T>::LowAmountOut);
-        ensure!(tokens_cost >= min_token_received, Error::<T>::LowAmountOut);
+        ensure!(
+            ksm_cost >= min_ksm_received,
+            Error::<T>::KsmAmountBelowExpectation
+        );
+        ensure!(
+            tokens_cost >= min_token_received,
+            Error::<T>::TokenAmountBelowExpectation
+        );
         Ok(())
     }
-}
-// The pallet's dispatchable functions.
-decl_module! {
-    /// The module declaration.
-    pub struct Module<T: Trait> for enum Call where origin: T::Origin {
 
-        type Error = Error<T>;
+    pub fn ksm_to_token_swap(
+        sender: T::AccountId,
+        ksm_in_amount: BalanceOf<T>,
+        token_out: T::AssetId,
+        min_token_out_amount: BalanceOf<T>,
+        receiver: T::AccountId,
+    ) -> dispatch::DispatchResult {
+        let exchange = Self::ensure_exchange_exists(token_out)?;
+        let (new_ksm_pool, new_token_pool, token_out_amount) =
+            exchange.calculate_ksm_to_token_swap(ksm_in_amount);
+        exchange.ensure_token_amount(token_out_amount, min_token_out_amount)?;
+        Self::ensure_sufficient_balance(&sender, &T::KSMAssetId::get(), ksm_in_amount)?;
+        Self::ensure_sufficient_balance(&T::DEXAccountId::get(), &token_out, token_out_amount)?;
 
-        fn deposit_event() = default;
+        //
+        // == MUTATION SAFE ==
+        //
 
-        #[weight = 10_000]
-        pub fn initialize_exchange(origin, ksm_amount: BalanceOf<T>, token: T::AssetId, token_amount: BalanceOf<T>) -> dispatch::DispatchResult {
-            let sender = ensure_signed(origin)?;
+        // transfer KSM to the DEX account
+        <generic_asset::Module<T>>::make_transfer_with_event(
+            &T::KSMAssetId::get(),
+            &sender,
+            &T::DEXAccountId::get(),
+            ksm_in_amount,
+        )?;
+        // transfer token to the receiver
+        <generic_asset::Module<T>>::make_transfer_with_event(
+            &token_out,
+            &T::DEXAccountId::get(),
+            &receiver,
+            token_out_amount,
+        )?;
 
-            Self::ensure_exchange_not_exists(token)?;
-            Self::exchanges(token).ensure_launch(ksm_amount, token_amount)?;
-            Self::ensure_sufficient_balances(&sender, ksm_amount, &token, token_amount)?;
+        Exchanges::<T>::mutate(token_out, |exchange| {
+            exchange.update_pools(new_ksm_pool, new_token_pool)
+        });
 
-            // transfer `ksm_amount` to our address
-            <generic_asset::Module<T>>::make_transfer_with_event(&T::KSMAssetId::get(), &sender, &T::DEXAccountId::get(), ksm_amount)?;
+        Self::deposit_event(RawEvent::Exchanged(
+            T::KSMAssetId::get(),
+            ksm_in_amount,
+            token_out,
+            token_out_amount,
+            sender,
+        ));
+        Ok(())
+    }
 
-            // transfer `token_amount` to our address
-            <generic_asset::Module<T>>::make_transfer_with_event(&token, &sender, &T::DEXAccountId::get(), token_amount)?;
+    pub fn token_to_ksm_swap(
+        sender: T::AccountId,
+        token_in: T::AssetId,
+        token_in_amount: BalanceOf<T>,
+        min_ksm_out_amount: BalanceOf<T>,
+        receiver: T::AccountId,
+    ) -> dispatch::DispatchResult {
+        let exchange = Self::ensure_exchange_exists(token_in)?;
+        let (new_ksm_pool, new_token_pool, ksm_out_amount) =
+            exchange.calculate_to_token_ksm_swap(token_in_amount);
+        exchange.ensure_ksm_amount(ksm_out_amount, min_ksm_out_amount)?;
+        Self::ensure_sufficient_balance(&sender, &token_in, token_in_amount)?;
+        Self::ensure_sufficient_balance(
+            &T::DEXAccountId::get(),
+            &T::KSMAssetId::get(),
+            ksm_out_amount,
+        )?;
 
-            //
-            // == MUTATION SAFE ==
-            //
-            let exchange = Exchange::<T>::initialize_new(ksm_amount, token_amount, sender.clone());
+        //
+        // == MUTATION SAFE ==
+        //
 
-            Exchanges::<T>::insert(token, exchange);
+        // transfer token to the DEX account
+        <generic_asset::Module<T>>::make_transfer_with_event(
+            &token_in,
+            &sender,
+            &T::DEXAccountId::get(),
+            token_in_amount,
+        )?;
+        // transfer KSM to the receiver
+        <generic_asset::Module<T>>::make_transfer_with_event(
+            &T::KSMAssetId::get(),
+            &T::DEXAccountId::get(),
+            &receiver,
+            ksm_out_amount,
+        )?;
 
-            Self::deposit_event(RawEvent::Invested(sender, T::InitialShares::get()));
-            Ok(())
-        }
+        Exchanges::<T>::mutate(token_in, |exchange| {
+            exchange.update_pools(new_ksm_pool, new_token_pool)
+        });
 
-        #[weight = 10_000]
-        pub fn ksm_to_token_swap(origin, token: T::AssetId, ksm_amount: BalanceOf<T>,  min_tokens_received: BalanceOf<T>, receiver : T::AccountId) -> dispatch::DispatchResult {
-            let sender = ensure_signed(origin)?;
-            let exchange = Self::ensure_exchange_exists(token)?;
+        Self::deposit_event(RawEvent::Exchanged(
+            token_in,
+            token_in_amount,
+            T::KSMAssetId::get(),
+            ksm_out_amount,
+            sender,
+        ));
+        Ok(())
+    }
 
-            let (new_ksm_pool, new_token_pool, tokens_out) = exchange.calculate_ksm_to_token_swap(ksm_amount);
-            exchange.ensure_tokens_out(tokens_out, min_tokens_received)?;
+    pub fn token_to_token_swap(
+        sender: T::AccountId,
+        token_in: T::AssetId,
+        token_in_amount: BalanceOf<T>,
+        token_out: T::AssetId,
+        min_token_out_amount: BalanceOf<T>,
+        receiver: T::AccountId,
+    ) -> dispatch::DispatchResult {
+        let from_exchange = Self::ensure_exchange_exists(token_in)?;
+        let to_exchange = Self::ensure_exchange_exists(token_out)?;
 
-            //
-            // == MUTATION SAFE ==
-            //
+        let (new_ksm_pool_from, new_token_pool_from, ksm_amount) =
+            from_exchange.calculate_to_token_ksm_swap(token_in_amount);
+        from_exchange.ensure_ksm_amount(ksm_amount, BalanceOf::<T>::zero())?;
 
-            <Exchanges<T>>::mutate(token, |exchange| {
-                exchange.update_pools(new_ksm_pool, new_token_pool)
-            });
+        let (new_ksm_pool_to, new_token_pool_to, token_out_amount) =
+            to_exchange.calculate_ksm_to_token_swap(ksm_amount);
+        to_exchange.ensure_token_amount(token_out_amount, min_token_out_amount)?;
+        Self::ensure_sufficient_balance(&sender, &token_in, token_in_amount)?;
+        Self::ensure_sufficient_balance(&T::DEXAccountId::get(), &token_out, token_out_amount)?;
 
-            // transfer `ksm_amount` to our address
-            <generic_asset::Module<T>>::make_transfer_with_event(&T::KSMAssetId::get(), &sender, &T::DEXAccountId::get(), tokens_out)?;
+        //
+        // == MUTATION SAFE ==
+        //
 
-            // transfer `token_amount` to receiver
-            <generic_asset::Module<T>>::make_transfer_with_event(&token, &T::DEXAccountId::get(), &sender, tokens_out)?;
+        // transfer `token_amount` to the DEX account
+        <generic_asset::Module<T>>::make_transfer_with_event(
+            &token_in,
+            &sender,
+            &T::DEXAccountId::get(),
+            token_in_amount,
+        )?;
+        // transfer `tokens_out` to the receiver
+        <generic_asset::Module<T>>::make_transfer_with_event(
+            &token_out,
+            &T::DEXAccountId::get(),
+            &receiver,
+            token_out_amount,
+        )?;
 
-            // Self::deposit_event(RawEvent::Exchanged(KSM_ACCOUNT_ID, token, ksm_amount, sender));
-            Ok(())
-        }
+        <Exchanges<T>>::mutate(token_in, |exchange| {
+            exchange.update_pools(new_ksm_pool_from, new_token_pool_from)
+        });
+        <Exchanges<T>>::mutate(token_out, |exchange| {
+            exchange.update_pools(new_ksm_pool_to, new_token_pool_to)
+        });
 
-        #[weight = 10_000]
-        pub fn token_to_ksm_swap(origin, token: T::AssetId, token_amount: BalanceOf<T>, min_ksm_received : BalanceOf<T>, receiver : T::AccountId) -> dispatch::DispatchResult {
-            let sender = ensure_signed(origin)?;
-            let exchange = Self::ensure_exchange_exists(token)?;
-
-            let (new_ksm_pool, new_token_pool, ksm_out) = exchange.calculate_token_to_ksm_swap(token_amount);
-            exchange.ensure_ksm_out(ksm_out, min_ksm_received)?;
-
-            //
-            // == MUTATION SAFE ==
-            //
-
-            <Exchanges<T>>::mutate(token, |exchange| {
-                exchange.update_pools(new_ksm_pool, new_token_pool)
-            });
-
-            // transfer `token_amount` to our address
-            <generic_asset::Module<T>>::make_transfer_with_event(&token, &sender, &T::DEXAccountId::get(), token_amount)?;
-
-            // transfer `ksm_out` to receiver
-            <generic_asset::Module<T>>::make_transfer_with_event(&T::KSMAssetId::get(), &T::DEXAccountId::get(), &sender, token_amount)?;
-
-            // Self::deposit_event(RawEvent::Exchanged(token, token_amount, sender));
-            Ok(())
-        }
-
-        #[weight = 10_000]
-        pub fn token_to_token_swap(origin, token_from: T::AssetId, token_to: T::AssetId, token_amount: BalanceOf<T>, min_tokens_received : BalanceOf<T>, receiver : T::AccountId) -> dispatch::DispatchResult {
-            let sender = ensure_signed(origin)?;
-
-            Self::ensure_valid_exchange(token_from,token_to)?;
-            let pair_from = Self::ensure_exchange_exists(token_from)?;
-            let pair_to = Self::ensure_exchange_exists(token_to)?;
-
-            let (new_ksm_pool_from, new_token_pool_from, ksm_out) = pair_from.calculate_token_to_ksm_swap(token_amount);
-            pair_from.ensure_ksm_out(ksm_out, BalanceOf::<T>::zero())?;
-
-            let (new_ksm_pool_to, new_token_pool_to, tokens_out) = pair_to.calculate_ksm_to_token_swap(ksm_out);
-            pair_to.ensure_tokens_out(tokens_out, min_tokens_received)?;
-
-            //
-            // == MUTATION SAFE ==
-            //
-
-            <Exchanges<T>>::mutate(token_from, |exchange| {
-                exchange.update_pools(new_ksm_pool_from, new_token_pool_from)
-            });
-            <Exchanges<T>>::mutate(token_to, |exchange| {
-                exchange.update_pools(new_ksm_pool_to, new_token_pool_to)
-            });
-
-            // transfer `token_amount` to our address
-            <generic_asset::Module<T>>::make_transfer_with_event(&token_from, &sender, &T::DEXAccountId::get(), token_amount)?;
-
-            // transfer `tokens_out` to receiver
-            <generic_asset::Module<T>>::make_transfer_with_event(&token_to, &T::DEXAccountId::get(), &sender, tokens_out)?;
-
-            // Self::deposit_event(RawEvent::Exchanged(token_from, token_to, token_amount, sender));
-            Ok(())
-        }
-
-        #[weight = 10_000]
-        pub fn invest_liquidity(origin, token: T::AssetId, shares: BalanceOf<T>) -> dispatch::DispatchResult {
-            let sender = ensure_signed(origin)?;
-
-            let (ksm_cost, tokens_cost) = Self::ensure_exchange_exists(token)?.calculate_share_price(shares);
-
-            //
-            // == MUTATION SAFE ==
-            //
-
-            <Exchanges<T>>::mutate(token, |exchange| {
-                exchange.invest(ksm_cost, tokens_cost, shares, sender.clone())
-            });
-
-            // transfer `ksm_cost` to our address
-            <generic_asset::Module<T>>::make_transfer_with_event(&T::KSMAssetId::get(), &sender, &T::DEXAccountId::get(), ksm_cost)?;
-
-            // transfer `tokens_cost` to our address
-            <generic_asset::Module<T>>::make_transfer_with_event(&token, &sender, &T::DEXAccountId::get(), tokens_cost)?;
-
-            Self::deposit_event(RawEvent::Invested(sender, shares));
-            Ok(())
-        }
-
-        #[weight = 10_000]
-        pub fn divest_liquidity(origin, token: T::AssetId, shares_burned:  BalanceOf<T>, min_ksm_received : BalanceOf<T>, min_token_received : BalanceOf<T>) -> dispatch::DispatchResult {
-            let sender = ensure_signed(origin)?;
-            let exchange = Self::ensure_exchange_exists(token)?;
-
-            exchange.ensure_burned_shares(sender.clone(), shares_burned)?;
-
-            let (ksm_cost, tokens_cost) = exchange.calculate_share_price(shares_burned);
-
-            Self::ensure_divest_expectations(ksm_cost, tokens_cost, min_ksm_received, min_token_received)?;
-
-            //
-            // == MUTATION SAFE ==
-            //
-
-            <Exchanges<T>>::mutate(token, |exchange| {
-                exchange.divest(ksm_cost, tokens_cost, shares_burned, sender.clone())
-            });
-
-            // transfer `ksm_cost` to sender
-            <generic_asset::Module<T>>::make_transfer_with_event(&T::KSMAssetId::get(), &T::DEXAccountId::get(), &sender, ksm_cost)?;
-
-            // transfer `tokens_cost` to sender
-            <generic_asset::Module<T>>::make_transfer_with_event(&token, &T::DEXAccountId::get(), &sender, tokens_cost)?;
-
-
-            Self::deposit_event(RawEvent::Divested(sender, shares_burned));
-            Ok(())
-        }
+        Self::deposit_event(RawEvent::Exchanged(
+            token_in,
+            token_in_amount,
+            token_out,
+            token_out_amount,
+            sender,
+        ));
+        Ok(())
     }
 }
