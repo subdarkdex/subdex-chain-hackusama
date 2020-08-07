@@ -1,6 +1,6 @@
 use darkdex_node_runtime::{
-    AccountId, AuraConfig, GenesisConfig, GrandpaConfig, Signature, SudoConfig, SystemConfig,
-    WASM_BINARY,
+    AccountId, AuraConfig, GenericAssetConfig, GenesisConfig, GrandpaConfig, Signature, SudoConfig,
+    SystemConfig, WASM_BINARY,
 };
 use sc_service::ChainType;
 use sp_consensus_aura::sr25519::AuthorityId as AuraId;
@@ -130,7 +130,7 @@ fn testnet_genesis(
     wasm_binary: &[u8],
     initial_authorities: Vec<(AuraId, GrandpaId)>,
     root_key: AccountId,
-    _endowed_accounts: Vec<AccountId>,
+    endowed_accounts: Vec<AccountId>,
     _enable_println: bool,
 ) -> GenesisConfig {
     GenesisConfig {
@@ -151,6 +151,14 @@ fn testnet_genesis(
         sudo: Some(SudoConfig {
             // Assign network admin rights.
             key: root_key,
+        }),
+        generic_asset: Some(GenericAssetConfig {
+            assets: vec![0, 1, 2],
+            initial_balance: 100000000,
+            endowed_accounts: endowed_accounts,
+            next_asset_id: 3,
+            spending_asset_id: 0,
+            staking_asset_id: 0,
         }),
     }
 }

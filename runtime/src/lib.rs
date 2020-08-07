@@ -297,7 +297,7 @@ construct_runtime!(
         Timestamp: timestamp::{Module, Call, Storage, Inherent},
         Aura: aura::{Module, Config<T>, Inherent},
         Grandpa: grandpa::{Module, Call, Storage, Config, Event},
-        GenericAsset: generic_asset::{Module, Call, Storage, Event<T>},
+        GenericAsset: generic_asset::{Module, Call, Storage, Config<T>, Event<T>},
         TransactionPayment: transaction_payment::{Module, Storage},
         Sudo: sudo::{Module, Call, Config<T>, Storage, Event<T>},
 

@@ -249,13 +249,12 @@ decl_event!(
         Balance = BalanceOf<T>,
     {
         Exchanged(AssetId, Balance, AssetId, Balance, AccountId),
-        Invested(AccountId, Shares),
-        Divested(AccountId, Shares),
+        Invested(AccountId, AssetId, Shares),
+        Divested(AccountId, AssetId, Shares),
         Withdrawn(AssetId, Balance, AccountId),
     }
 );
 
-// The pallet's errors
 decl_error! {
     pub enum Error for Module<T: Trait> {
         ExchangeNotExists,
@@ -276,9 +275,7 @@ decl_error! {
     }
 }
 
-// The pallet's dispatchable functions.
 decl_module! {
-    /// The module declaration.
     pub struct Module<T: Trait> for enum Call where origin: T::Origin {
 
         type Error = Error<T>;
@@ -306,7 +303,7 @@ decl_module! {
 
             Exchanges::<T>::insert(token, exchange);
 
-            Self::deposit_event(RawEvent::Invested(sender, T::InitialShares::get()));
+            Self::deposit_event(RawEvent::Invested(sender, token, T::InitialShares::get()));
             Ok(())
         }
 
@@ -345,7 +342,7 @@ decl_module! {
                 exchange.invest(ksm_cost, token_cost, shares, sender.clone())
             });
 
-            Self::deposit_event(RawEvent::Invested(sender, shares));
+            Self::deposit_event(RawEvent::Invested(sender, token, shares));
             Ok(())
         }
 
@@ -372,7 +369,7 @@ decl_module! {
                 exchange.divest(ksm_cost, token_cost, shares_burned, sender.clone())
             });
 
-            Self::deposit_event(RawEvent::Divested(sender, shares_burned));
+            Self::deposit_event(RawEvent::Divested(sender, token, shares_burned));
             Ok(())
         }
     }
