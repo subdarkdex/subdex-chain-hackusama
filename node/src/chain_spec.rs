@@ -154,7 +154,7 @@ fn testnet_genesis(
         }),
         generic_asset: Some(GenericAssetConfig {
             assets: vec![0, 1, 2],
-            initial_balance: 10u128.pow(12+3),
+            initial_balance: 10u128.pow(12 + 3),
             endowed_accounts: endowed_accounts,
             next_asset_id: 3,
             spending_asset_id: 0,
