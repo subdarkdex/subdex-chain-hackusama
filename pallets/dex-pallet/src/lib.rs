@@ -94,7 +94,7 @@ impl<T: Trait> Exchange<T> {
         (new_ksm_pool, new_token_pool, token_amount)
     }
 
-    pub fn calculate_to_token_ksm_swap(
+    pub fn calculate_token_to_ksm_swap(
         &self,
         token_amount: BalanceOf<T>,
     ) -> (BalanceOf<T>, BalanceOf<T>, BalanceOf<T>) {
@@ -106,11 +106,9 @@ impl<T: Trait> Exchange<T> {
         (new_ksm_pool, new_token_pool, ksm_amount)
     }
 
-    pub fn calculate_share_price(&self, shares: BalanceOf<T>) -> (BalanceOf<T>, BalanceOf<T>) {
-        let ksm_per_share = self.ksm_pool / self.total_shares;
-        let ksm_cost = ksm_per_share * shares;
-        let token_per_share = self.token_pool / self.total_shares;
-        let token_cost = token_per_share * shares;
+    pub fn calculate_costs(&self, shares: BalanceOf<T>) -> (BalanceOf<T>, BalanceOf<T>) {
+        let ksm_cost = self.ksm_pool  * shares / self.total_shares;
+        let token_cost = self.token_pool * shares / self.total_shares;
         (ksm_cost, token_cost)
     }
 
@@ -326,7 +324,7 @@ decl_module! {
         pub fn invest_liquidity(origin, token: T::AssetId, shares: BalanceOf<T>) -> dispatch::DispatchResult {
             let sender = ensure_signed(origin)?;
 
-            let (ksm_cost, token_cost) = Self::ensure_exchange_exists(token)?.calculate_share_price(shares);
+            let (ksm_cost, token_cost) = Self::ensure_exchange_exists(token)?.calculate_costs(shares);
             Self::ensure_sufficient_balances(&sender, &T::KSMAssetId::get(), ksm_cost, &token, token_cost)?;
 
             //
@@ -352,7 +350,7 @@ decl_module! {
 
             let exchange = Self::ensure_exchange_exists(token)?;
             exchange.ensure_burned_shares(sender.clone(), shares_burned)?;
-            let (ksm_cost, token_cost) = exchange.calculate_share_price(shares_burned);
+            let (ksm_cost, token_cost) = exchange.calculate_costs(shares_burned);
             Self::ensure_divest_expectations(ksm_cost, token_cost, min_ksm_received, min_token_received)?;
             Self::ensure_sufficient_balances(&T::DEXAccountId::get(), &T::KSMAssetId::get(), ksm_cost, &token, token_cost)?;
 
@@ -385,16 +383,18 @@ impl<T: Trait> Module<T> {
     }
 
     pub fn ensure_exchange_exists(token: T::AssetId) -> Result<Exchange<T>, Error<T>> {
+        let exchange = Self::exchanges(token);
         ensure!(
-            Exchanges::<T>::contains_key(token),
+            exchange.invariant > BalanceOf::<T>::zero(),
             Error::<T>::ExchangeNotExists
         );
-        Ok(Self::exchanges(token))
+        Ok(exchange)
     }
 
     pub fn ensure_exchange_not_exists(token: T::AssetId) -> dispatch::DispatchResult {
+        let exchange = Self::exchanges(token);
         ensure!(
-            !Exchanges::<T>::contains_key(token),
+            exchange.invariant == BalanceOf::<T>::zero(),
             Error::<T>::ExchangeAlreadyExists
         );
         Ok(())
@@ -507,7 +507,7 @@ impl<T: Trait> Module<T> {
     ) -> dispatch::DispatchResult {
         let exchange = Self::ensure_exchange_exists(token_in)?;
         let (new_ksm_pool, new_token_pool, ksm_out_amount) =
-            exchange.calculate_to_token_ksm_swap(token_in_amount);
+            exchange.calculate_token_to_ksm_swap(token_in_amount);
         exchange.ensure_ksm_amount(ksm_out_amount, min_ksm_out_amount)?;
         Self::ensure_sufficient_balance(&sender, &token_in, token_in_amount)?;
         Self::ensure_sufficient_balance(
@@ -561,7 +561,7 @@ impl<T: Trait> Module<T> {
         let to_exchange = Self::ensure_exchange_exists(token_out)?;
 
         let (new_ksm_pool_from, new_token_pool_from, ksm_amount) =
-            from_exchange.calculate_to_token_ksm_swap(token_in_amount);
+            from_exchange.calculate_token_to_ksm_swap(token_in_amount);
         from_exchange.ensure_ksm_amount(ksm_amount, BalanceOf::<T>::zero())?;
 
         let (new_ksm_pool_to, new_token_pool_to, token_out_amount) =
