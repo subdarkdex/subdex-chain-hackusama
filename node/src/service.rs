@@ -1,6 +1,6 @@
 //! Service and ServiceFactory implementation. Specialized wrapper over substrate service.
 
-use darkdex_node_runtime::{self, Block, RuntimeApi};
+use subdex_node_runtime::{self, Block, RuntimeApi};
 use sc_client_api::{ExecutorProvider, RemoteBackend};
 use sc_executor::native_executor_instance;
 pub use sc_executor::NativeExecutor;
@@ -17,8 +17,8 @@ use std::time::Duration;
 // Our native executor instance.
 native_executor_instance!(
     pub Executor,
-    darkdex_node_runtime::api::dispatch,
-    darkdex_node_runtime::native_version,
+    subdex_node_runtime::api::dispatch,
+    subdex_node_runtime::native_version,
 );
 
 type FullClient = sc_service::TFullClient<Block, RuntimeApi, Executor>;

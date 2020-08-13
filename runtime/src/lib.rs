@@ -103,8 +103,8 @@ pub mod opaque {
 
 /// This runtime version.
 pub const VERSION: RuntimeVersion = RuntimeVersion {
-    spec_name: create_runtime_str!("node-template"),
-    impl_name: create_runtime_str!("node-template"),
+    spec_name: create_runtime_str!("subdex-node"),
+    impl_name: create_runtime_str!("subdex-node"),
     authoring_version: 1,
     spec_version: 1,
     impl_version: 1,
@@ -112,7 +112,7 @@ pub const VERSION: RuntimeVersion = RuntimeVersion {
     transaction_version: 1,
 };
 
-pub const MILLISECS_PER_BLOCK: u64 = 3000;
+pub const MILLISECS_PER_BLOCK: u64 = 1500;
 
 pub const SLOT_DURATION: u64 = MILLISECS_PER_BLOCK;
 

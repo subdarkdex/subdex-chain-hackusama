@@ -58,7 +58,7 @@ impl SubstrateCli for Cli {
     }
 
     fn native_runtime_version(_: &Box<dyn ChainSpec>) -> &'static RuntimeVersion {
-        &darkdex_node_runtime::VERSION
+        &subdex_node_runtime::VERSION
     }
 }
 

@@ -6,24 +6,24 @@ on:
     - master
 
 jobs:
-  build-push-template:
+  build-push-subdex-node:
     runs-on: ubuntu-18.04
     steps:
     - uses: actions/checkout@v2
 
-    - name: Build and push the node-template Docker image
+    - name: Build and push the subdex-node Docker image
       uses: docker/build-push-action@v1 # https://github.com/docker/build-push-action
       with:
         username: ${{ secrets.DOCKER_USERNAME }}
         password: ${{ secrets.DOCKER_PASSWORD }}
         dockerfile: .devcontainer/Dockerfile
-        repository: darkdex/darkdex-chain
+        repository: subdarkdex/subdex-chain
         tags: latest
         add_git_labels: true
         tag_with_ref: true
         tag_with_sha: true
 
-    - run: echo ::set-output name=image::darkdex/darkdex-chain:sha-${GITHUB_SHA::7}
+    - run: echo ::set-output name=image::subdarkdex/subdex-chain:sha-${GITHUB_SHA::7}
       id: env
 
     - name: Update devcontainer.json

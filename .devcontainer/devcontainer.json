@@ -1,5 +1,5 @@
 {
-  "name": "DarkDEX chain",
+  "name": "SubDEX chain",
   "dockerFile": "Dockerfile",
   "settings": {
     "terminal.integrated.shell.linux": "/bin/bash",
@@ -14,5 +14,5 @@
     3000,
     9944
   ],
-  "image": "darkdex/darkdex-chain:sha-a5d5cbc"
+  "image": "subdarkdex/subdex-chain:sha-a5d5cbc"
 }

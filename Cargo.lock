@@ -889,68 +889,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "darkdex-node"
-version = "2.0.0-rc5"
-dependencies = [
- "darkdex-node-runtime",
- "futures 0.3.5",
- "log",
- "parking_lot 0.10.2",
- "sc-basic-authorship",
- "sc-cli",
- "sc-client-api",
- "sc-consensus",
- "sc-consensus-aura",
- "sc-executor",
- "sc-finality-grandpa",
- "sc-network",
- "sc-service",
- "sc-transaction-pool",
- "sp-consensus",
- "sp-consensus-aura",
- "sp-core",
- "sp-finality-grandpa",
- "sp-inherents",
- "sp-runtime",
- "sp-transaction-pool",
- "structopt",
- "substrate-build-script-utils",
-]
-
-[[package]]
-name = "darkdex-node-runtime"
-version = "2.0.0-rc5"
-dependencies = [
- "dex-pallet",
- "frame-executive",
- "frame-support",
- "frame-system",
- "lazy_static",
- "pallet-aura",
- "pallet-generic-asset",
- "pallet-grandpa",
- "pallet-randomness-collective-flip",
- "pallet-sudo",
- "pallet-timestamp",
- "pallet-transaction-payment",
- "parity-scale-codec",
- "serde",
- "sp-api",
- "sp-block-builder",
- "sp-consensus-aura",
- "sp-core",
- "sp-inherents",
- "sp-io",
- "sp-offchain",
- "sp-runtime",
- "sp-session",
- "sp-std",
- "sp-transaction-pool",
- "sp-version",
- "substrate-wasm-builder-runner",
-]
-
-[[package]]
 name = "data-encoding"
 version = "2.2.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -6109,6 +6047,68 @@ dependencies = [
  "proc-macro2",
  "quote 1.0.7",
  "syn 1.0.36",
+]
+
+[[package]]
+name = "subdex-node"
+version = "2.0.0-rc5"
+dependencies = [
+ "futures 0.3.5",
+ "log",
+ "parking_lot 0.10.2",
+ "sc-basic-authorship",
+ "sc-cli",
+ "sc-client-api",
+ "sc-consensus",
+ "sc-consensus-aura",
+ "sc-executor",
+ "sc-finality-grandpa",
+ "sc-network",
+ "sc-service",
+ "sc-transaction-pool",
+ "sp-consensus",
+ "sp-consensus-aura",
+ "sp-core",
+ "sp-finality-grandpa",
+ "sp-inherents",
+ "sp-runtime",
+ "sp-transaction-pool",
+ "structopt",
+ "subdex-node-runtime",
+ "substrate-build-script-utils",
+]
+
+[[package]]
+name = "subdex-node-runtime"
+version = "2.0.0-rc5"
+dependencies = [
+ "dex-pallet",
+ "frame-executive",
+ "frame-support",
+ "frame-system",
+ "lazy_static",
+ "pallet-aura",
+ "pallet-generic-asset",
+ "pallet-grandpa",
+ "pallet-randomness-collective-flip",
+ "pallet-sudo",
+ "pallet-timestamp",
+ "pallet-transaction-payment",
+ "parity-scale-codec",
+ "serde",
+ "sp-api",
+ "sp-block-builder",
+ "sp-consensus-aura",
+ "sp-core",
+ "sp-inherents",
+ "sp-io",
+ "sp-offchain",
+ "sp-runtime",
+ "sp-session",
+ "sp-std",
+ "sp-transaction-pool",
+ "sp-version",
+ "substrate-wasm-builder-runner",
 ]
 
 [[package]]
