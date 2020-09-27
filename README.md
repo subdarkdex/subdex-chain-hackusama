@@ -1,4 +1,4 @@
-# SubDEX chain
+# SubDEX chain - Deprecated
 
 A DEX built on [Substrate Note Template](https://github.com/substrate-developer-hub/substrate-node-template) :rocket:
 
